@@ -1,10 +1,13 @@
-# macOS
+# OS files
 .DS_Store
 
-# Editor
+# Editor / IDE
 .vscode/
 .idea/
 *.swp
 
 # Logs
 *.log
+
+# Local machine-specific config (copy from config.example.lua)
+config.lua

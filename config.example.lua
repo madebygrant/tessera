@@ -1,8 +1,12 @@
--- config.lua
+-- config.example.lua
 --
--- Single declarative config for the tessera tools. Edit THIS file to
--- change screens, slots, apps, the half-screen switcher, or layout profiles --
--- the other modules just read from here.
+-- Template config for the tessera tools. Copy this to `config.lua` and edit the
+-- values for your machine (screen names, apps, slots, profiles). `config.lua`
+-- is gitignored so your local setup stays out of version control.
+--
+--   cp config.example.lua config.lua
+--
+-- The other modules only read from config.lua.
 
 local core = require("tessera.layout-shared")
 
@@ -11,15 +15,16 @@ local C = {}
 -- ================= SCREENS =================
 -- Friendly name -> a substring of the hs.screen name (see `hs.screen.allScreens`).
 -- Anything that doesn't match falls back to the primary screen.
+--   hs -c 'for _,s in ipairs(hs.screen.allScreens()) do print(s:name()) end'
 C.screens = {
   main     = "Built-in Retina Display",
-  external = "LF32TU87",
+  external = "YOUR_EXTERNAL_MONITOR_NAME",
 }
 
 -- Pixels carved off a screen's edges before slots are computed -- for overlays
--- macOS doesn't report in :frame(), like Sketchybar. Keyed by friendly name.
+-- macOS doesn't report in :frame(), like a status bar. Keyed by friendly name.
 C.screenInsets = {
-  external = { top = 28 }, -- clear the Sketchybar bar at the top
+  -- external = { top = 28 }, -- e.g. clear a top status bar
 }
 
 -- Pixels shrunk off each slot edge, so neighbours sit 2*gap apart. Raise for
@@ -31,12 +36,9 @@ C.gap = 0
 -- area. No pixel math, and it follows the monitor if resolution changes.
 C.slots = {
   topLeft    = { screen = "external", x = 0,   y = 0,    w = 0.5,  h = 0.75 },
-  -- Slightly narrower than a half: leaves a small right margin so Ghostty can
-  -- cell-snap a bit wider without its clamped right edge shoving the window
-  -- left across the topLeft boundary (into Zed).
-  topRight   = { screen = "external", x = 0.5, y = 0,    w = 0.49, h = 0.75 },
-  bottomWide = { screen = "external", x = 0,   y = 0.75, w = 1,   h = 0.25 },
-  mainMax    = { screen = "main",     x = 0,   y = 0,    w = 1,   h = 1    },
+  topRight   = { screen = "external", x = 0.5, y = 0,    w = 0.5,  h = 0.75 },
+  bottomWide = { screen = "external", x = 0,   y = 0.75, w = 1,    h = 0.25 },
+  mainMax    = { screen = "main",     x = 0,   y = 0,    w = 1,    h = 1    },
 }
 
 -- Live frame for a slot, computed fresh each call (handles monitor changes).
@@ -53,15 +55,14 @@ end
 
 -- ================= APPS =================
 -- How to identify a window (titleSuffix) and how to open one when missing:
---   profileDir -- Chromium/Helium: open with a specific profile in a new window
+--   profileDir -- Chromium-based: open with a specific profile in a new window
 --   launch     -- a raw shell command (wins over profileDir)
 -- `app` is the app name or bundle id.
 C.apps = {
-  zed        = { app = "Zed" },
-  ghostty    = { app = "Ghostty" },
-  heliumDev  = { app = "Helium", titleSuffix = "Development", profileDir = "Default" },
-  heliumWork = { app = "Helium", titleSuffix = "Work",        profileDir = "Profile 1" },
-  slack      = { app = "Slack" },
+  editor   = { app = "Zed" },
+  terminal = { app = "Ghostty" },
+  browser  = { app = "YourBrowser", titleSuffix = "Work", profileDir = "Default" },
+  chat     = { app = "Slack" },
 }
 
 function C.app(ref)
@@ -74,10 +75,10 @@ end
 -- Half-screen app switcher: an anchor app pinned to `anchorSlot`, plus apps
 -- cycled through `otherSlot` via hotkeys (modifier+1..N, and modifier+Left/Right).
 C.switcher = {
-  anchor     = "zed",
+  anchor     = "editor",
   anchorSlot = "topLeft",
   otherSlot  = "topRight",
-  apps       = { "heliumDev", "ghostty" },
+  apps       = { "browser", "terminal" },
   modifier   = { "ctrl", "alt", "cmd" },
 }
 
@@ -89,12 +90,11 @@ C.profiles = {
   dev = {
     modifier = { "ctrl", "alt", "cmd" }, key = "L",
     place = {
-      { app = "heliumDev",  slot = "topRight" },
-      { app = "heliumWork", slot = "mainMax" },
-      { app = "ghostty",    slot = "topRight",   useSwitcherWindow = true },
-      { app = "ghostty",    slot = "bottomWide" },
-      { app = "zed",        slot = "topLeft" },
-      { app = "slack",      slot = "mainMax" },
+      { app = "browser",  slot = "topRight" },
+      { app = "terminal", slot = "topRight",   useSwitcherWindow = true },
+      { app = "terminal", slot = "bottomWide" },
+      { app = "editor",   slot = "topLeft" },
+      { app = "chat",     slot = "mainMax" },
     },
   },
 }
