@@ -12,6 +12,16 @@ Clone into your Hammerspoon config directory:
 git clone git@github.com:madebygrant/tessera.git ~/.hammerspoon/tessera
 ```
 
+Create your local config from the template:
+
+```sh
+cd ~/.hammerspoon/tessera
+cp config.example.lua config.lua
+```
+
+Edit `config.lua` for your machine (screen names, apps, slots, profiles). It is
+gitignored, so your local setup stays out of version control.
+
 Then load it from `~/.hammerspoon/init.lua`:
 
 ```lua
