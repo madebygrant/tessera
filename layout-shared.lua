@@ -1,8 +1,10 @@
 -- layout-shared.lua
 --
--- Shared glue for the tessera tools: screen/geometry resolution, the
--- frame clamp, and a small window registry one module publishes to and the
--- other reads. Pure utilities -- no config knowledge lives here.
+-- Shared glue for the tessera tools: screen/geometry resolution, the frame
+-- clamp, app/window lookup across an app's processes, and the two channels the
+-- feature modules talk over instead of requiring each other -- a window
+-- registry and the active-profile broadcast. Pure utilities: no config
+-- knowledge lives here.
 
 local core = {}
 
@@ -74,6 +76,54 @@ function core.endsWith(s, suffix)
   return suffix == "" or s:sub(-#suffix) == suffix
 end
 
+-- True if the title ends with ANY of the suffixes. Used to spot a window that
+-- a titled entry has claimed, so an untitled one leaves it alone.
+function core.endsWithAny(s, suffixes)
+  for _, suffix in ipairs(suffixes or {}) do
+    if core.endsWith(s, suffix) then return true end
+  end
+  return false
+end
+
+-- App name -> bundle id, learned the first time we see the app running. Lets
+-- every later lookup take the indexed applicationsForBundleID path instead of
+-- walking the process table.
+local bundleIds = {}
+
+-- EVERY running app object for a name or bundle id. macOS happily hosts two
+-- processes for one app -- the `open -na` an entry's `launch`/`profileDir` runs
+-- forks a fresh instance -- and hs.application.get returns just one of them
+-- (often the newest). Anything hunting for a window has to look across all of
+-- them or it silently misses the other instance's windows.
+--
+-- Called from the 0.2s pollers and from window-layout's retries, so the slow
+-- path matters: config entries name apps ("Ghostty"), not bundle ids, and only
+-- a bundle id can be looked up directly. Put a bundle id in the config to skip
+-- the scan entirely even before the app is running.
+function core.apps(name)
+  local found = hs.application.applicationsForBundleID(bundleIds[name] or name)
+  if #found > 0 then return found end
+  local out = {}
+  for _, a in ipairs(hs.application.runningApplications()) do
+    if a:name() == name or a:bundleID() == name then
+      out[#out + 1] = a
+      bundleIds[name] = a:bundleID()
+    end
+  end
+  return out
+end
+
+-- Every standard window of an app, across all its processes.
+function core.appWindows(name)
+  local wins = {}
+  for _, a in ipairs(core.apps(name)) do
+    for _, w in ipairs(a:allWindows()) do
+      if w:isStandard() then wins[#wins + 1] = w end
+    end
+  end
+  return wins
+end
+
 -- Stable key for a placed window: app + title suffix. Shared so the switcher
 -- (which publishes) and window-layout (which reads) build identical keys.
 function core.entryKey(app, suffix)
@@ -91,6 +141,26 @@ end
 function core.window(key)
   local id = registry[key]
   return id and hs.window.get(id) or nil
+end
+
+-- Active-profile broadcast: window-layout announces the profile it just applied,
+-- the switcher retargets itself to that profile's switcher block. Same
+-- decoupling as the registry -- neither module requires the other.
+local profileHandlers = {}
+local activeProfile = nil
+
+function core.onProfile(fn)
+  profileHandlers[#profileHandlers + 1] = fn
+end
+
+function core.setProfile(name)
+  if name == activeProfile then return end
+  activeProfile = name
+  for _, fn in ipairs(profileHandlers) do fn(name) end
+end
+
+function core.profile()
+  return activeProfile
 end
 
 return core

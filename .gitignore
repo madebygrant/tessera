@@ -9,5 +9,7 @@
 # Logs
 *.log
 
-# Local machine-specific config (copy from config.example.lua)
+# Local machine-specific config. Preferred spot is OUTSIDE this repo, as
+# ~/.hammerspoon/tessera-config.lua, but it also loads from here -- ignored so
+# it stays out of version control either way.
 config.lua

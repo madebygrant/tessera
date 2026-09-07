@@ -5,7 +5,7 @@
 -- Reuses the switcher's tracked window when a profile entry asks for it.
 
 local core = require("tessera.layout-shared")
-local config = require("tessera.config")
+local config = require("tessera-config")
 
 -- The switcher's tracked window for an app entry (via the shared registry), or
 -- nil if it hasn't been placed this session. Skips windows already reserved.
@@ -15,14 +15,18 @@ local function switcherWindow(entry, used)
   return nil
 end
 
--- First matching, still-unused window of an app (by title suffix if given).
-local function findWindow(app, suffix, used)
-  if not app then return nil end
-  for _, win in ipairs(app:allWindows()) do
+-- First matching, still-unused window of an app, across all its processes (by
+-- title suffix if given). Without a suffix, windows a titled sibling entry has
+-- claimed are skipped, so an untitled entry can't land on a titled one's window.
+local function findWindow(appName, suffix, used)
+  local reserved = not suffix and config.reservedSuffixes(appName) or nil
+  for _, win in ipairs(core.appWindows(appName)) do
     local id = win:id()
     if id and not used[id] then
       local title = win:title() or ""
-      if not suffix or core.endsWith(title, suffix) then
+      if suffix then
+        if core.endsWith(title, suffix) then return win end
+      elseif not core.endsWithAny(title, reserved) then
         return win
       end
     end
@@ -60,8 +64,7 @@ local function placeEntry(item, used, attempt)
     return
   end
 
-  local app = hs.application.get(entry.app)
-  local win = findWindow(app, entry.titleSuffix, used)
+  local win = findWindow(entry.app, entry.titleSuffix, used)
   if win then
     core.setFrameClamped(win, frame)
     used[win:id()] = true
@@ -73,13 +76,18 @@ local function placeEntry(item, used, attempt)
   end
 end
 
--- Per-profile debounce, so a double hotkey press doesn't fight itself.
+-- Per-profile debounce, so a double hotkey press doesn't fight itself. Long
+-- enough to absorb a double-tap, short enough that bouncing between two
+-- profiles to compare them isn't silently ignored.
+local debounce = 2.0
 local lastRun = {}
 
 local function applyProfile(name, profile)
   local now = hs.timer.secondsSinceEpoch()
-  if lastRun[name] and now - lastRun[name] < 10 then return end
+  if lastRun[name] and now - lastRun[name] < debounce then return end
   lastRun[name] = now
+  -- Retarget the switcher before placing, so its slots match this layout.
+  core.setProfile(name)
   local used = {}
   for _, item in ipairs(profile.place) do
     placeEntry(item, used)
