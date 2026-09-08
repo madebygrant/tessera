@@ -44,10 +44,33 @@ Reload Hammerspoon (menu bar → Reload Config, or `hs.reload()`).
 - **Switcher** pins an anchor app to half the screen and cycles other apps
   through the remaining half via `modifier`+`1..N` / `Left`/`Right`. Its hotkeys
   are global, but its targets belong to the active profile — pressing a
-  profile's hotkey retargets the switcher along with the layout.
+  profile's hotkey retargets the switcher along with the layout. A profile's
+  `start` picks which app it opens on without changing the number-key order.
 - **screenInsets** carve pixels off a screen before slots compute (e.g. clearing
   a Sketchybar overlay macOS doesn't report).
 - **gap** shrinks every slot edge by N px so neighbours sit apart.
+- **Sketchybar readout** (optional) reports the active profile and slot number
+  to a [SketchyBar](https://github.com/FelixKratz/SketchyBar) item.
+
+## Hotkeys
+
+Defaults from the template. The switcher layer is bound once and never rebinds;
+only what it targets changes with the active profile.
+
+| Keys | Action |
+| --- | --- |
+| `ctrl+alt`+`1..N` | Jump to the Nth app of the active profile |
+| `ctrl+alt`+`Left`/`Right` | Cycle through them |
+| `ctrl+alt`+`F` | Toggle the current app full-screen |
+| `ctrl+alt+cmd`+profile key | Apply that profile's layout |
+
+Number keys are bound for the widest `apps` list across all profiles, so a key
+past the active profile's count does nothing rather than wrapping.
+
+`ctrl+alt` deliberately avoids `alt+cmd`, where the arrows are tab-switch in
+most browsers and terminals. Hammerspoon wins that fight and would break them
+with no error. The trade-off is VoiceOver, which claims `ctrl+alt` as its own
+modifier: while it is on, the switcher keys silently do nothing.
 
 ## Files
 
@@ -59,6 +82,7 @@ Reload Hammerspoon (menu bar → Reload Config, or `hs.reload()`).
 | `layout-shared.lua` | Pure engine: geometry resolution, frame clamp, window registry. |
 | `layout-workspace.lua` | The half-screen app switcher. |
 | `window-layout.lua` | Applies a profile on its hotkey. |
+| `sketchybar/` | Optional bar item and plugin, to copy into your SketchyBar config. |
 
 ## Configuration
 
@@ -70,8 +94,9 @@ Everything lives in your config file (copied from
 - **New profile** — add to `config.profiles` with its own `modifier`+`key`; it
   auto-binds. `place` order matters — earlier entries reserve their window first.
   Each profile also needs a `switcher` block (`anchor`, `anchorSlot`,
-  `otherSlot`, `fullSlot`, `apps`) saying what the switcher hotkeys drive while
-  that profile is active. `config.defaultProfile` picks the one used at load.
+  `otherSlot`, `fullSlot`, `apps`, optional `start`) saying what the switcher
+  hotkeys drive while that profile is active. `config.defaultProfile` picks the
+  one used at load.
 
 Screen names are machine-specific. On a new machine, list them with:
 
@@ -80,3 +105,56 @@ hs -c 'for _,s in ipairs(hs.screen.allScreens()) do print(s:name()) end'
 ```
 
 and update `config.screens`. Unmatched names fall back to the primary screen.
+
+## Sketchybar readout
+
+Optional. tessera fires a [SketchyBar](https://github.com/FelixKratz/SketchyBar)
+event whenever the switcher moves, so a bar item can show where you are:
+
+```
+ SPLIT 2/2
+```
+
+```lua
+C.sketchybar = {
+  enabled = true,
+  event   = "tessera_switcher",
+}
+```
+
+`enabled = false` stops tessera shelling out at all. `event` must match the
+`--add event` name in your bar config, and an optional `bin` overrides the
+binary path (unset searches both Homebrew prefixes). Omit the block and the
+readout stays on wherever sketchybar is installed; a machine without it is a
+no-op either way.
+
+The bar half ships in `sketchybar/`. Copy it into your SketchyBar config, or
+symlink it so repo updates land automatically:
+
+```sh
+ln -s ~/.hammerspoon/tessera/sketchybar/items/tessera.sh   ~/.config/sketchybar/items/tessera.sh
+ln -s ~/.hammerspoon/tessera/sketchybar/plugins/tessera.sh ~/.config/sketchybar/plugins/tessera.sh
+```
+
+Then source the item from your `sketchybarrc`:
+
+```sh
+source "$ITEM_DIR/tessera.sh"
+```
+
+The label uses white unless you export `TESSERA_LABEL_COLOR` from your own bar
+config. Writing a different item instead is fine; each trigger carries:
+
+| Variable | Value |
+| --- | --- |
+| `PROFILE` | Active profile name |
+| `APP` | Config ref of the current cycled app (`terminal`) |
+| `APP_NAME` | Its macOS app name, for matching against `front_app` |
+| `ANCHOR_NAME` | The anchor's app name |
+| `INDEX` / `COUNT` | Position in the profile's `apps` list |
+| `MAXIMIZED` | Whether it covers the anchor |
+| `FOCUSED` | True when tessera just pulled that app forward |
+
+`FOCUSED` matters if the item hides the slot number outside the layout: a
+profile retarget places nothing, so it must not claim the front app.
+

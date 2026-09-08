@@ -36,6 +36,8 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   between `otherSlot` and `fullSlot` (whole screen); switching apps resets it.
   Publishes each placed window to the registry, and retargets itself on the
   profile broadcast.
+- **sketchybar/** — the bar half of the readout (`items/` + `plugins/`), copied
+  or symlinked into `~/.config/sketchybar`. Not loaded by Hammerspoon at all.
 - **window-layout.lua** — applies a `config.profiles` entry on its hotkey:
   broadcasts the profile name, then each app → its slot, launching/matching via
   the app's config.
@@ -119,10 +121,12 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   shows the profile plus the slot number, and drops the number while the front
   app is neither the current cycled app nor the anchor. `FOCUSED` is false for a
   profile retarget, which places nothing and so must not claim the front app.
-  The bar side is
-  `~/.config/sketchybar/{items,plugins}/tessera.sh`, outside this repo. Missing
-  sketchybar is a no-op, so the trigger is safe on a machine without it. The
-  `hs.task` handles are retained in `barTasks` — an unreferenced one gets
+  The bar side is vendored in `sketchybar/`, symlinked from
+  `~/.config/sketchybar/{items,plugins}/tessera.sh` on this machine, so edit the
+  repo copy. It keeps its own state under `$TMPDIR` because SketchyBar runs each
+  event in a separate process; `TESSERA_LABEL_COLOR` is the only theming hook.
+  Missing sketchybar is a no-op, so the trigger is safe on a machine without
+  it. The `hs.task` handles are retained in `barTasks` — an unreferenced one gets
   collected mid-flight and the update silently goes missing. `M.pushToBar()` is
   exported so the bar can pull current state when IT restarts.
 - **VoiceOver eats the switcher.** `ctrl+alt` is VoiceOver's VO modifier, so
