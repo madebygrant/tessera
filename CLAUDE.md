@@ -51,11 +51,17 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   Currently `0` (flush, edge-to-edge).
 - **The switcher belongs to a profile.** `C.switcher` is only the hotkey layer
   (`modifier`, `maximizeKey`) — bound once and never rebound. Each profile
-  carries its own `switcher = { anchor, anchorSlot, otherSlot, fullSlot, apps }`,
-  and applying a profile retargets the live switcher at it. Number keys are
+  carries its own
+  `switcher = { anchor, anchorSlot, otherSlot, fullSlot, apps, start? }`,
+  and applying a profile retargets the live switcher at it. `apps` order is the
+  number-key order; optional `start` names which of them the profile opens on
+  and resets to, so "first app" and "key 1" can differ. Number keys are
   bound for the WIDEST `apps` list across all profiles; a key past the active
   profile's count is a no-op. `C.defaultProfile` is what the switcher targets at
-  load, before any profile hotkey is pressed.
+  load, before any profile hotkey is pressed. The modifier is `ctrl+alt`, kept
+  clear of `alt+cmd` — its arrows are tab-switch in most browsers and terminals,
+  and Hammerspoon grabs the event first, so binding there breaks them silently.
+  Profile hotkeys sit a level up on `ctrl+alt+cmd`.
 - **Profile broadcast** is the second decoupler: `window-layout` calls
   `core.setProfile(name)` before placing; `layout-workspace` subscribed with
   `core.onProfile`. Same-name calls are ignored, so re-pressing the active
@@ -75,7 +81,12 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
 - **Ghostty** snaps to a cell grid, so a window can land a few px larger than
   its slot; the clamp + off-bottom overflow handle it. Its `title` config is
   GLOBAL to the instance, so you can't title-match to tell two plain Ghostty
-  windows apart — the switcher spawns/tracks its own by window id instead.
+  windows apart — the switcher tracks its window by id in the registry instead.
+- **The switcher never opens a second window.** It reuses the registry window,
+  else adopts any window the app already has (so an app launched at login is
+  moved, not duplicated), else launches the app. Only window-layout spawns, and
+  only when a profile puts the same app in two slots and every existing window
+  is already used by an earlier `place` entry.
 - **Don't preload a command in Ghostty.** Tried and reverted: macOS has no way to
   tell a RUNNING Ghostty to open a window with a command (`+new-window` is
   Linux-only in 1.3.1; `--args` are ignored for a live instance), so it needs
@@ -99,6 +110,25 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
 - **Slot overlaps are intentional**: both `topRight` (Helium Dev + switcher
   Ghostty) and `mainMax` (Helium Work + Slack) are shared frames — apps that
   live in the same spot on different Spaces.
+- **Sketchybar readout.** Gated by `config.sketchybar`
+  (`enabled`/`event`/`bin`); a missing block means on wherever the binary is
+  found, so behaviour is unchanged for a config that predates the flag.
+  `layout-workspace` shells `sketchybar --trigger <event>` on every switch,
+  maximize and profile change, carrying
+  `APP INDEX COUNT PROFILE MAXIMIZED APP_NAME ANCHOR_NAME FOCUSED`. The bar
+  shows the profile plus the slot number, and drops the number while the front
+  app is neither the current cycled app nor the anchor. `FOCUSED` is false for a
+  profile retarget, which places nothing and so must not claim the front app.
+  The bar side is
+  `~/.config/sketchybar/{items,plugins}/tessera.sh`, outside this repo. Missing
+  sketchybar is a no-op, so the trigger is safe on a machine without it. The
+  `hs.task` handles are retained in `barTasks` — an unreferenced one gets
+  collected mid-flight and the update silently goes missing. `M.pushToBar()` is
+  exported so the bar can pull current state when IT restarts.
+- **VoiceOver eats the switcher.** `ctrl+alt` is VoiceOver's VO modifier, so
+  every switcher hotkey stops working while VoiceOver is on (cmd+F5). Nothing
+  errors, the keys just do nothing. If they go dead for no reason, check that
+  first.
 - **Screen names are machine-specific** (`config.screens`). On a new machine,
   run `hs -c 'for _,s in ipairs(hs.screen.allScreens()) do print(s:name()) end'`
   and update them; unmatched names fall back to primary.

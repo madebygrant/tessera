@@ -1,16 +1,13 @@
 -- layout-shared.lua
 --
--- Shared glue for the tessera tools: screen/geometry resolution, the frame
--- clamp, app/window lookup across an app's processes, and the two channels the
--- feature modules talk over instead of requiring each other -- a window
--- registry and the active-profile broadcast. Pure utilities: no config
--- knowledge lives here.
+-- Pure utilities shared by the two feature modules: geometry, the frame clamp,
+-- app/window lookup across processes, and the window registry and profile
+-- broadcast they talk over instead of requiring each other. No config knowledge.
 
 local core = {}
 
--- Resolve a screen from a name substring (or a function returning a screen).
--- Falls back to the primary screen if nothing matches, so an unplugged monitor
--- degrades gracefully instead of erroring.
+-- Falls back to the primary screen, so an unplugged monitor degrades instead
+-- of erroring.
 function core.resolveScreen(spec)
   if type(spec) == "function" then return spec() end
   if spec then
@@ -22,14 +19,11 @@ function core.resolveScreen(spec)
   return hs.screen.primaryScreen()
 end
 
--- A frame computed as fractions (0..1) of a screen's usable area (:frame()
--- excludes the menu bar / Dock). spec = { screen, x, y, w, h, inset, gap }:
---   inset = { top, bottom, left, right } in pixels carved off the screen first
---           -- use it to clear overlays macOS doesn't report, like Sketchybar.
---   gap   = pixels shrunk off EACH edge of the resulting slot, so adjacent
---           slots sit `2*gap` apart (and `gap` from the screen edge). Absorbs
---           apps that snap to a min/cell size slightly larger than the slot.
--- Returns a fresh table each call, so callers can't share/mutate one.
+-- A frame from fractions (0..1) of a screen's usable area.
+--   inset = pixels carved off the screen first, for overlays macOS leaves out
+--           of :frame() (Sketchybar).
+--   gap   = pixels off EACH slot edge, so neighbours sit 2*gap apart. Absorbs
+--           apps that snap slightly larger than their slot.
 function core.frameFor(spec)
   local f = core.resolveScreen(spec.screen):frame()
   local i = spec.inset or {}
@@ -46,12 +40,10 @@ function core.frameFor(spec)
   }
 end
 
--- Keep a window from bleeding past its screen's RIGHT edge onto a side-by-side
--- neighbour screen (the original Ghostty-onto-the-laptop bug). An app that snaps
--- wider than its slot gets shifted left, back onto its own screen. Vertical
--- overflow is deliberately left alone: a too-tall window falls off the bottom
--- edge (harmless -- nothing below) rather than being pushed UP into the slot
--- above it, which would overlap a flush neighbour.
+-- Pull a window back from its screen's RIGHT edge, so one that snaps wider than
+-- its slot can't bleed onto the neighbouring screen. Vertical overflow is left
+-- alone on purpose: falling off the bottom beats being pushed up into the slot
+-- above, which would overlap a flush neighbour.
 local function clampInto(win)
   local f = win:frame()
   local s = win:screen():frame()
@@ -60,10 +52,8 @@ local function clampInto(win)
   end
 end
 
--- Set a window's frame, then clamp it back onto its screen. Apps that snap to a
--- min/cell grid (Ghostty) resize a beat AFTER setFrame returns, so an immediate
--- clamp sees the not-yet-grown size and misses -- re-clamp on a short delay to
--- catch the settled size.
+-- Re-clamp on a delay as well: apps that snap to a cell grid (Ghostty) resize a
+-- beat after setFrame returns, so the immediate clamp sees a stale size.
 function core.setFrameClamped(win, target)
   win:setFrame(target)
   clampInto(win)
@@ -71,13 +61,12 @@ function core.setFrameClamped(win, target)
   hs.timer.doAfter(0.4, function() clampInto(win) end)
 end
 
--- True if `s` ends with `suffix`. Empty suffix matches anything.
+-- Empty suffix matches anything.
 function core.endsWith(s, suffix)
   return suffix == "" or s:sub(-#suffix) == suffix
 end
 
--- True if the title ends with ANY of the suffixes. Used to spot a window that
--- a titled entry has claimed, so an untitled one leaves it alone.
+-- True if a titled entry claims this title.
 function core.endsWithAny(s, suffixes)
   for _, suffix in ipairs(suffixes or {}) do
     if core.endsWith(s, suffix) then return true end
@@ -85,21 +74,15 @@ function core.endsWithAny(s, suffixes)
   return false
 end
 
--- App name -> bundle id, learned the first time we see the app running. Lets
--- every later lookup take the indexed applicationsForBundleID path instead of
--- walking the process table.
+-- App name -> bundle id, learned once the app is seen running; later lookups
+-- then take the indexed path instead of walking the process table.
 local bundleIds = {}
 
--- EVERY running app object for a name or bundle id. macOS happily hosts two
--- processes for one app -- the `open -na` an entry's `launch`/`profileDir` runs
--- forks a fresh instance -- and hs.application.get returns just one of them
--- (often the newest). Anything hunting for a window has to look across all of
--- them or it silently misses the other instance's windows.
---
--- Called from the 0.2s pollers and from window-layout's retries, so the slow
--- path matters: config entries name apps ("Ghostty"), not bundle ids, and only
--- a bundle id can be looked up directly. Put a bundle id in the config to skip
--- the scan entirely even before the app is running.
+-- EVERY process for an app. macOS hosts two whenever an entry's launch or
+-- profileDir shells out to `open -na`, and hs.application.get returns only one
+-- of them, so anything built on it silently misses the other's windows. Config
+-- entries name apps rather than bundle ids, so the first call per app scans;
+-- put a bundle id in the config to skip even that.
 function core.apps(name)
   local found = hs.application.applicationsForBundleID(bundleIds[name] or name)
   if #found > 0 then return found end
@@ -113,6 +96,20 @@ function core.apps(name)
   return out
 end
 
+-- The process to treat as "the" app: most standard windows. A stray second
+-- instance usually has one or none, so this lands on the real one.
+function core.primaryApp(name)
+  local best, most = nil, -1
+  for _, a in ipairs(core.apps(name)) do
+    local n = 0
+    for _, w in ipairs(a:allWindows()) do
+      if w:isStandard() then n = n + 1 end
+    end
+    if n > most then best, most = a, n end
+  end
+  return best
+end
+
 -- Every standard window of an app, across all its processes.
 function core.appWindows(name)
   local wins = {}
@@ -124,14 +121,31 @@ function core.appWindows(name)
   return wins
 end
 
--- Stable key for a placed window: app + title suffix. Shared so the switcher
--- (which publishes) and window-layout (which reads) build identical keys.
+-- Menu item first, since Cmd+N needs the app activated. This is the only way to
+-- get a second window out of a running app -- launchOrFocus just focuses one.
+function core.openNewWindow(app)
+  local menus = {
+    { "File", "New Window" },
+    { "File", "New window" },
+    { "Shell", "New Window" },   -- Terminal
+    { "Window", "New Window" },
+  }
+  for _, path in ipairs(menus) do
+    if app:findMenuItem(path) then
+      app:selectMenuItem(path)
+      return
+    end
+  end
+  app:activate()
+  hs.eventtap.keyStroke({ "cmd" }, "n", 0, app)
+end
+
+-- Stable key for a placed window, built identically on both sides of the registry.
 function core.entryKey(app, suffix)
   return app .. "\0" .. (suffix or "")
 end
 
--- Window registry: one module publishes a live window under an entryKey, the
--- other resolves it later. Replaces window-layout's require() of the switcher.
+-- One module publishes a live window under an entryKey; the other resolves it.
 local registry = {} -- entryKey -> window id
 
 function core.publishWindow(key, win)
@@ -143,9 +157,8 @@ function core.window(key)
   return id and hs.window.get(id) or nil
 end
 
--- Active-profile broadcast: window-layout announces the profile it just applied,
--- the switcher retargets itself to that profile's switcher block. Same
--- decoupling as the registry -- neither module requires the other.
+-- window-layout announces the profile it applied; the switcher retargets to it.
+-- Same decoupling as the registry -- neither module requires the other.
 local profileHandlers = {}
 local activeProfile = nil
 

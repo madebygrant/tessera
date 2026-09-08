@@ -1,16 +1,15 @@
 -- tessera/init.lua
 --
 -- Package entry point. From ~/.hammerspoon/init.lua just `require("tessera")`;
--- this wires up the tools and owns their load order. Returns the config table
--- so callers can inspect/tweak it programmatically if they want.
+-- this owns the load order and returns the config table.
 
--- Where the config may live, in priority order:
---   tessera-config  -> ~/.hammerspoon/tessera-config.lua  (outside this repo)
---   tessera.config  -> ~/.hammerspoon/tessera/config.lua  (inside it, gitignored)
--- Outside wins: it survives re-cloning the repo. Loaded here rather than in the
--- feature modules so a missing or broken config reports itself plainly, and so
--- both modules get the same table whichever file it came from.
-local candidates = { "tessera-config", "tessera.config" }
+-- Outside the repo wins, since it survives re-cloning. Resolved here rather
+-- than in the feature modules so a missing or broken config says so plainly,
+-- and so both modules get the same table whichever file it came from.
+local candidates = {
+  "tessera-config", -- ~/.hammerspoon/tessera-config.lua
+  "tessera.config", -- ~/.hammerspoon/tessera/config.lua, gitignored
+}
 
 local found = {}
 for _, name in ipairs(candidates) do
@@ -30,10 +29,13 @@ if #found > 1 then
     :format(#found, table.concat(found, ", "), found[1]))
 end
 
-local config = require(found[1])
+local ok, config = pcall(require, found[1])
+if not ok then
+  error("tessera: " .. found[1] .. " failed to load:\n  " .. tostring(config), 0)
+end
 
--- Alias, so the feature modules' `require("tessera-config")` resolves to the
--- config we picked even when it was the in-repo one.
+-- Alias, so the modules' `require("tessera-config")` resolves to the file we
+-- picked even when it was the in-repo one.
 package.loaded["tessera-config"] = config
 
 require("tessera.layout-workspace") -- half-screen app switcher

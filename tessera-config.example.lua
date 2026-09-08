@@ -75,9 +75,8 @@ function C.app(ref)
   return a
 end
 
--- Title suffixes other entries have claimed for the same app. An untitled entry
--- matches ANY window of its app, so without this it could hijack a titled
--- sibling's window; these are the suffixes it must skip.
+-- An untitled entry matches ANY window of its app, so it needs the suffixes its
+-- titled siblings claim in order to skip them.
 function C.reservedSuffixes(appName)
   local out = {}
   for _, a in pairs(C.apps) do
@@ -93,9 +92,23 @@ end
 --   modifier+1..N        -- jump to the Nth app of the active profile
 --   modifier+Left/Right  -- cycle through them
 --   modifier+maximizeKey -- toggle the current one full-screen
+-- ctrl+alt avoids alt+cmd, where the arrows are tab-switch in most browsers and
+-- terminals; Hammerspoon would win that fight and silently break them.
 C.switcher = {
-  modifier    = { "ctrl", "alt", "cmd" },
+  modifier    = { "ctrl", "alt" },
   maximizeKey = "f",
+}
+
+-- ================= SKETCHYBAR =================
+-- Pushes the active profile and slot number to a Sketchybar item. The bar half
+-- (items/plugins under ~/.config/sketchybar) is what draws it; this only fires
+-- the event. Omit the block and it stays on wherever sketchybar is installed.
+--   enabled -- false stops tessera shelling out at all
+--   event   -- must match the `--add event` name in the bar config
+--   bin     -- override the binary path; unset searches both brew prefixes
+C.sketchybar = {
+  enabled = false,
+  event   = "tessera_switcher",
 }
 
 -- ================= PROFILES =================
@@ -107,7 +120,8 @@ C.switcher = {
 --   anchor/anchorSlot -- the app pinned beside the cycled ones
 --   otherSlot         -- where the cycled apps land
 --   fullSlot          -- the maximize target
---   apps              -- what modifier+1..N cycles through
+--   apps              -- what modifier+1..N cycles through, in key order
+--   start             -- which of `apps` to open on; unset means the first
 C.profiles = {
   dev = {
     modifier = { "ctrl", "alt", "cmd" }, key = "L",
@@ -131,7 +145,7 @@ C.profiles = {
     switcher = {
       anchor = "editor", anchorSlot = "leftHalf",
       otherSlot = "rightHalf", fullSlot = "full",
-      apps = { "browser", "terminal" },
+      apps = { "browser", "terminal" }, start = "terminal",
     },
     place = {
       { app = "browser",  slot = "rightHalf" },

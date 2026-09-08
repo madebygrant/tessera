@@ -1,23 +1,20 @@
 -- window-layout.lua
 --
--- Applies a named full-desktop layout profile (config.profiles) on a hotkey:
--- each app is placed into its slot, launching/matching by the app's config.
--- Reuses the switcher's tracked window when a profile entry asks for it.
+-- Applies a named profile (config.profiles) on its hotkey: each app into its
+-- slot, reusing the switcher's tracked window when an entry asks for it.
 
 local core = require("tessera.layout-shared")
 local config = require("tessera-config")
 
--- The switcher's tracked window for an app entry (via the shared registry), or
--- nil if it hasn't been placed this session. Skips windows already reserved.
+-- The switcher's tracked window for an entry, unless this pass already used it.
 local function switcherWindow(entry, used)
   local w = core.window(core.entryKey(entry.app, entry.titleSuffix))
   if w and not used[w:id()] then return w end
   return nil
 end
 
--- First matching, still-unused window of an app, across all its processes (by
--- title suffix if given). Without a suffix, windows a titled sibling entry has
--- claimed are skipped, so an untitled entry can't land on a titled one's window.
+-- First unused window of an app, across its processes. Without a suffix, skip
+-- windows a titled sibling entry claims.
 local function findWindow(appName, suffix, used)
   local reserved = not suffix and config.reservedSuffixes(appName) or nil
   for _, win in ipairs(core.appWindows(appName)) do
@@ -34,34 +31,44 @@ local function findWindow(appName, suffix, used)
   return nil
 end
 
--- Open an app entry that isn't showing the window we need yet.
 local function launchEntry(entry)
   if entry.launch then
     hs.execute(entry.launch)
-  elseif entry.profileDir then
+    return
+  end
+  if entry.profileDir then
     hs.execute(string.format(
       '/usr/bin/open -na %q --args --profile-directory=%q --new-window',
       entry.app, entry.profileDir
     ))
+    return
+  end
+  -- Running but every window taken (same app in two slots): launchOrFocus would
+  -- just focus one of those, so ask for a new one.
+  local running = core.primaryApp(entry.app)
+  if running then
+    core.openNewWindow(running)
   else
     hs.application.launchOrFocus(entry.app)
   end
 end
 
--- Place one profile entry, retrying a few times while the app/window appears.
+-- Place one profile entry, retrying while the app/window appears.
 local function placeEntry(item, used, attempt)
   attempt = attempt or 1
   local entry = config.app(item.app)
   local frame = config.slot(item.slot)
 
-  -- Reuse the switcher's window when asked; never launch a duplicate for it.
+  -- With nothing tracked yet (cold boot, switcher untouched) fall through and
+  -- place it like any other entry -- findWindow adopts before launching, so it
+  -- still won't open a duplicate.
   if item.useSwitcherWindow then
     local win = switcherWindow(entry, used)
     if win then
       core.setFrameClamped(win, frame)
       used[win:id()] = true
+      return
     end
-    return
   end
 
   local win = findWindow(entry.app, entry.titleSuffix, used)
@@ -76,9 +83,7 @@ local function placeEntry(item, used, attempt)
   end
 end
 
--- Per-profile debounce, so a double hotkey press doesn't fight itself. Long
--- enough to absorb a double-tap, short enough that bouncing between two
--- profiles to compare them isn't silently ignored.
+-- Absorbs a double-tap without swallowing a genuine bounce between profiles.
 local debounce = 2.0
 local lastRun = {}
 
