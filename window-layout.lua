@@ -60,7 +60,7 @@ local function placeEntry(item, used, attempt)
   local frame = config.slot(item.slot)
 
   -- With nothing tracked yet (cold boot, switcher untouched) fall through and
-  -- place it like any other entry -- findWindow adopts before launching, so it
+  -- place it like any other entry: findWindow adopts before launching, so it
   -- still won't open a duplicate.
   if item.useSwitcherWindow then
     local win = switcherWindow(entry, used)
@@ -99,8 +99,9 @@ local function applyProfile(name, profile)
   end
 end
 
+-- A profile can carry its own `modifier`; otherwise it sits on the shared layer.
 for name, profile in pairs(config.profiles) do
-  hs.hotkey.bind(profile.modifier, profile.key, function()
+  hs.hotkey.bind(profile.modifier or config.keys.profile, profile.key, function()
     applyProfile(name, profile)
   end)
 end

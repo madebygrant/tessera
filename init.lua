@@ -34,11 +34,17 @@ if not ok then
   error("tessera: " .. found[1] .. " failed to load:\n  " .. tostring(config), 0)
 end
 
+local schema = require("tessera.schema")
+schema.attach(config)
+
 -- Alias, so the modules' `require("tessera-config")` resolves to the file we
 -- picked even when it was the in-repo one.
 package.loaded["tessera-config"] = config
 
 require("tessera.layout-workspace") -- half-screen app switcher
 require("tessera.window-layout")    -- full-desktop layout profiles
+if schema.enabled(config, "slotMove") then
+  require("tessera.slot-move")      -- focused window -> a slot of the active profile
+end
 
 return config

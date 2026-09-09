@@ -5,6 +5,7 @@
 
 local core = require("tessera.layout-shared")
 local config = require("tessera-config")
+local schema = require("tessera.schema")
 
 local M = {}
 
@@ -12,7 +13,7 @@ local M = {}
 local launchTimeout = 5.0
 local pollInterval = 0.2
 
-local keys = config.switcher -- the hotkey layer; targets come from the profile
+local keys = config.keys -- the hotkey layer; targets come from the profile
 
 -- Retargeted by useProfile() whenever the active profile changes.
 local sw          -- the active profile's switcher block
@@ -79,7 +80,7 @@ local function launchEntry(entry)
 end
 
 -- Place an entry's window in `slotName`, launching the app if needed. Never
--- opens a second window for a running app -- that's window-layout's job.
+-- opens a second window for a running app; that's window-layout's job.
 --   titleSuffix -> reuse the SPECIFIC window whose title matches.
 --   remember    -> record the window in the registry (cycled apps), vs not
 --                  (the anchor, which is just whatever window the app has).
@@ -163,15 +164,15 @@ end
 -- Whether the cycled app covers the anchor. A switch restores the split.
 local maximized = false
 
--- Sketchybar readout. Absent config means on-if-installed, so a machine with a
--- bar gets one without opting in; `enabled = false` is the opt-out.
+-- Sketchybar readout, opt-in like every other feature block.
 local barConfig = config.sketchybar or {}
+local barEnabled = schema.enabled(config, "sketchybar")
 local barEvent = barConfig.event or "tessera_switcher"
 
 -- Sketchybar's own PATH isn't Hammerspoon's, so find the binary rather than
 -- shelling out by name. nil = disabled or absent, and every push is a no-op.
 local sketchybar = (function()
-  if barConfig.enabled == false then return nil end
+  if not barEnabled then return nil end
   if barConfig.bin then
     if hs.fs.attributes(barConfig.bin) then return barConfig.bin end
     print("tessera: config.sketchybar.bin '" .. barConfig.bin .. "' not found; readout off")
@@ -228,7 +229,7 @@ local function startIndex(name, s)
         "', which is not in its switcher apps")
 end
 
--- Retargets state only -- window-layout places the windows. Except at load,
+-- Retargets state only; window-layout places the windows. Except at load,
 -- where nothing else has run yet.
 local function useProfile(name, apply)
   -- Resolve everything that can throw (unknown app, bad `start`) before any of
@@ -292,14 +293,14 @@ end
 
 -- modifier+1..N. A key past the active profile's count is a no-op, not a wrap.
 for i = 1, maxApps() do
-  hs.hotkey.bind(keys.modifier, tostring(i), function()
+  hs.hotkey.bind(keys.switcher, tostring(i), function()
     if i <= #workspace then switchWorkspace(i) end
   end)
 end
 
-hs.hotkey.bind(keys.modifier, "left", function() switchWorkspace(currentIndex - 1) end)
-hs.hotkey.bind(keys.modifier, "right", function() switchWorkspace(currentIndex + 1) end)
-hs.hotkey.bind(keys.modifier, keys.maximizeKey, toggleMaximize)
+hs.hotkey.bind(keys.switcher, "left", function() switchWorkspace(currentIndex - 1) end)
+hs.hotkey.bind(keys.switcher, "right", function() switchWorkspace(currentIndex + 1) end)
+hs.hotkey.bind(keys.switcher, keys.maximize, toggleMaximize)
 
 -- Watcher events carry a name; an entry may hold a bundle id instead.
 local function isAnchor(name, app)

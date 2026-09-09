@@ -1,40 +1,39 @@
 -- tessera-config.example.lua
 --
--- Template config for the tessera tools. Copy it to one of the two places
--- tessera looks, then edit the values for your machine (screen names, apps,
--- slots, profiles). Either way it stays out of version control.
+-- Copy this, then edit your copy for your machine: screen names, apps, slots,
+-- keys, profiles. Either spot works and both stay out of version control.
 --
 --   cp tessera-config.example.lua ~/.hammerspoon/tessera-config.lua  -- preferred
 --   cp tessera-config.example.lua config.lua                         -- in-repo
 --
--- Outside the repo wins if both exist, and survives re-cloning tessera.
-
-local core = require("tessera.layout-shared")
+-- The one outside the repo wins if both exist, and survives re-cloning tessera.
+-- It's all data, nothing to call. A feature stays off until its block is here,
+-- and `enabled = false` turns one off without deleting it.
 
 local C = {}
 
 -- ================= SCREENS =================
--- Friendly name -> a substring of the hs.screen name (see `hs.screen.allScreens`).
--- Anything that doesn't match falls back to the primary screen.
+-- Your name for a screen -> enough of its real name to match it. Anything that
+-- doesn't match falls back to the primary screen.
 --   hs -c 'for _,s in ipairs(hs.screen.allScreens()) do print(s:name()) end'
 C.screens = {
   main     = "Built-in Retina Display",
   external = "YOUR_EXTERNAL_MONITOR_NAME",
 }
 
--- Pixels carved off a screen's edges before slots are computed -- for overlays
--- macOS doesn't report in :frame(), like a status bar. Keyed by friendly name.
+-- Pixels to keep clear at a screen's edges. macOS doesn't mention overlays
+-- like a status bar, so say so here and slots will avoid them.
 C.screenInsets = {
   -- external = { top = 28 }, -- e.g. clear a top status bar
 }
 
--- Pixels shrunk off each slot edge, so neighbours sit 2*gap apart. Raise for
--- spacing between windows; 0 = flush, edge-to-edge.
+-- Breathing room around every slot, in pixels. Neighbours end up 2*gap apart.
+-- 0 is flush, edge to edge.
 C.gap = 0
 
 -- ================= SLOTS =================
--- A slot is a screen + a rectangle in FRACTIONS (0..1) of that screen's usable
--- area. No pixel math, and it follows the monitor if resolution changes.
+-- A slot is a rectangle on a screen, measured in fractions of it rather than
+-- pixels, so it survives a resolution change. x/y is the top-left corner.
 C.slots = {
   topLeft    = { screen = "external", x = 0,   y = 0,    w = 0.5,  h = 0.75 },
   topRight   = { screen = "external", x = 0.5, y = 0,    w = 0.5,  h = 0.75 },
@@ -45,23 +44,13 @@ C.slots = {
   full       = { screen = "external", x = 0,   y = 0,    w = 1,    h = 1    },
 }
 
--- Live frame for a slot, computed fresh each call (handles monitor changes).
-function C.slot(name)
-  local s = C.slots[name]
-  assert(s, "unknown slot: " .. tostring(name))
-  return core.frameFor({
-    screen = C.screens[s.screen] or s.screen,
-    inset = C.screenInsets[s.screen],
-    gap = C.gap,
-    x = s.x, y = s.y, w = s.w, h = s.h,
-  })
-end
-
 -- ================= APPS =================
--- How to identify a window (titleSuffix) and how to open one when missing:
---   profileDir -- Chromium-based: open with a specific profile in a new window
---   launch     -- a raw shell command (wins over profileDir)
--- `app` is the app name or bundle id.
+-- Your name for an app -> how to find its window, and how to open one if it
+-- isn't there yet.
+--   app         the app's name, or its bundle id
+--   titleSuffix pick one specific window by how its title ends
+--   profileDir  Chromium-based: open this profile in its own window
+--   launch      run this command instead (wins over profileDir)
 C.apps = {
   editor   = { app = "Zed" },
   terminal = { app = "Ghostty" },
@@ -69,62 +58,60 @@ C.apps = {
   chat     = { app = "Slack" },
 }
 
-function C.app(ref)
-  local a = C.apps[ref]
-  assert(a, "unknown app: " .. tostring(ref))
-  return a
-end
-
--- An untitled entry matches ANY window of its app, so it needs the suffixes its
--- titled siblings claim in order to skip them.
-function C.reservedSuffixes(appName)
-  local out = {}
-  for _, a in pairs(C.apps) do
-    if a.app == appName and a.titleSuffix then out[#out + 1] = a.titleSuffix end
-  end
-  return out
-end
-
--- ================= SWITCHER =================
--- The switcher's hotkey layer, shared by every profile: these keys never
--- rebind, only what they target changes (each profile's `switcher` block says
--- which apps and slots they drive).
---   modifier+1..N        -- jump to the Nth app of the active profile
---   modifier+Left/Right  -- cycle through them
---   modifier+maximizeKey -- toggle the current one full-screen
--- ctrl+alt avoids alt+cmd, where the arrows are tab-switch in most browsers and
--- terminals; Hammerspoon would win that fight and silently break them.
-C.switcher = {
-  modifier    = { "ctrl", "alt" },
-  maximizeKey = "f",
+-- ================= KEYS =================
+-- Every shortcut in one place, so you can spot a clash before it bites.
+--   switcher +1..N, +Left/Right   the active profile's apps
+--   switcher +maximize            fill the screen with the current one
+--   slotMove +1..N                throw the focused window into a slot
+--   profile  +its own key         apply that layout
+-- Steer clear of alt+cmd. Its arrows switch tabs in most browsers and
+-- terminals, and Hammerspoon gets the key first, so they'd quietly stop
+-- working.
+C.keys = {
+  switcher = { "ctrl", "alt" },
+  slotMove = { "ctrl", "alt", "shift" },
+  profile  = { "ctrl", "alt", "cmd" },
+  maximize = "f",
 }
 
 -- ================= SKETCHYBAR =================
--- Pushes the active profile and slot number to a Sketchybar item. The bar half
--- (items/plugins under ~/.config/sketchybar) is what draws it; this only fires
--- the event. Omit the block and it stays on wherever sketchybar is installed.
---   enabled -- false stops tessera shelling out at all
---   event   -- must match the `--add event` name in the bar config
---   bin     -- override the binary path; unset searches both brew prefixes
+-- Shows the active profile and slot in Sketchybar. tessera only sends the
+-- event; the item that draws it lives in your Sketchybar config, copied from
+-- sketchybar/ in the repo. Delete this block if you don't use Sketchybar.
+--   event  match the `--add event` name on the bar side
+--   bin    where sketchybar lives, if it's somewhere unusual
 C.sketchybar = {
   enabled = false,
   event   = "tessera_switcher",
 }
 
+-- ================= SLOT MOVE =================
+-- Sends whatever window you're looking at to one of the current profile's
+-- slots, even if it belongs to an app tessera has never heard of.
+-- Which slot gets which number: the profile's `slots` list if it has one,
+-- otherwise the slots its `place` entries mention, in order.
+C.slotMove = {
+  enabled = false,
+}
+
 -- ================= PROFILES =================
--- Full-desktop layouts, each bound to a hotkey. A `place` entry positions one
--- app in one slot. `useSwitcherWindow` reuses the switcher's tracked window for
--- that app. Order matters: earlier entries reserve their window first.
+-- A whole-desktop layout on one key. `key` rides on C.keys.profile unless the
+-- profile names its own `modifier`.
 --
--- `switcher` retargets the shared hotkeys while this profile is active:
---   anchor/anchorSlot -- the app pinned beside the cycled ones
---   otherSlot         -- where the cycled apps land
---   fullSlot          -- the maximize target
---   apps              -- what modifier+1..N cycles through, in key order
---   start             -- which of `apps` to open on; unset means the first
+-- switcher  what the switcher keys drive while this profile is active:
+--   anchor, anchorSlot  the app pinned beside the ones you cycle
+--   otherSlot           where the cycled apps land
+--   fullSlot            where maximize puts them
+--   apps                what +1..N cycles through, in that order
+--   start               which of them to open on (default: the first)
+--
+-- slots     numbering for slotMove. Optional; `place` decides it otherwise.
+-- place     where each app goes when you press the profile's key. Earlier
+--           entries claim their window first, which matters when an app appears
+--           twice. useSwitcherWindow reuses the window the switcher tracks.
 C.profiles = {
   dev = {
-    modifier = { "ctrl", "alt", "cmd" }, key = "L",
+    key = "L",
     switcher = {
       anchor = "editor", anchorSlot = "topLeft",
       otherSlot = "topRight", fullSlot = "full",
@@ -141,12 +128,13 @@ C.profiles = {
 
   -- Same apps, but the external screen is two full-height halves.
   split = {
-    modifier = { "ctrl", "alt", "cmd" }, key = "K",
+    key = "K",
     switcher = {
       anchor = "editor", anchorSlot = "leftHalf",
       otherSlot = "rightHalf", fullSlot = "full",
       apps = { "browser", "terminal" }, start = "terminal",
     },
+    slots = { "leftHalf", "rightHalf", "mainMax" },
     place = {
       { app = "browser",  slot = "rightHalf" },
       { app = "terminal", slot = "rightHalf", useSwitcherWindow = true },
@@ -156,13 +144,7 @@ C.profiles = {
   },
 }
 
--- The profile the switcher targets at load, before any profile hotkey is used.
+-- Which profile is live at startup, before you press anything.
 C.defaultProfile = "dev"
-
-function C.profile(name)
-  local p = C.profiles[name]
-  assert(p, "unknown profile: " .. tostring(name))
-  return p
-end
 
 return C

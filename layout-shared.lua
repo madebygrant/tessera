@@ -122,7 +122,7 @@ function core.appWindows(name)
 end
 
 -- Menu item first, since Cmd+N needs the app activated. This is the only way to
--- get a second window out of a running app -- launchOrFocus just focuses one.
+-- get a second window out of a running app; launchOrFocus just focuses one.
 function core.openNewWindow(app)
   local menus = {
     { "File", "New Window" },
@@ -158,7 +158,7 @@ function core.window(key)
 end
 
 -- window-layout announces the profile it applied; the switcher retargets to it.
--- Same decoupling as the registry -- neither module requires the other.
+-- Same decoupling as the registry: neither module requires the other.
 local profileHandlers = {}
 local activeProfile = nil
 

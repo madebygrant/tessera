@@ -4,17 +4,19 @@ Config-driven window management: a half-screen app switcher plus named
 full-desktop layout profiles, both placing windows into geometry-based "slots".
 
 Loaded from `~/.hammerspoon/init.lua` via `require("tessera")`, which resolves to
-`tessera/init.lua` and wires up the two feature modules. Reload after edits:
+`tessera/init.lua` and wires up the feature modules. Reload after edits:
 menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
 
 ## Files
 
 - **init.lua** — package entry point (`require("tessera")`). Resolves the config
-  (plain error if there is none), then loads the two feature modules in order;
-  returns the config table.
-- **the config** — the ONE file to edit: screens, slots, insets, gap, apps, the
-  switcher, and layout profiles. `tessera-config.example.lua` is the template.
-  It loads from either of two places, first hit wins:
+  (plain error if there is none), attaches the schema, then loads the feature
+  modules in order, optional ones only when `schema.enabled` says so. Returns
+  the config table.
+- **the config** — the ONE file to edit: screens, slots, insets, gap, apps,
+  keys, feature blocks, and layout profiles. Data only, no functions; the
+  accessors come from `schema.lua`. `tessera-config.example.lua` is the
+  template. It loads from either of two places, first hit wins:
   1. `~/.hammerspoon/tessera-config.lua` — outside the repo, so it survives
      re-cloning. Preferred, and what this machine uses.
   2. `tessera/config.lua` — inside the repo, gitignored.
@@ -24,6 +26,11 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   `package.loaded["tessera-config"]` to it, so the feature modules can just say
   `require("tessera-config")` without caring which file won. With both present
   it prints which one it used.
+- **schema.lua** — the accessors every config needs (`slot`, `app`, `profile`,
+  `reservedSuffixes`) plus `enabled(config, name)`. `init.lua` attaches them
+  after loading the config, so the config file stays data-only and a fix to an
+  accessor reaches every config. Asserts the `keys` block is there, since every
+  module binds off it.
 - **layout-shared.lua** — pure engine: screen/geometry resolution
   (`frameFor`, `resolveScreen`), the frame clamp (`setFrameClamped`), the
   cross-module window registry (`publishWindow`/`window`), the active-profile
@@ -31,13 +38,16 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   No config knowledge.
 - **layout-workspace.lua** — the half-screen switcher. Pins the active profile's
   `switcher.anchor` to its `anchorSlot`; hotkeys cycle that profile's
-  `switcher.apps` through `otherSlot` (`switcher.modifier`+1..N, and
-  +Left/Right). `modifier`+`maximizeKey` toggles the current workspace app
+  `switcher.apps` through `otherSlot` (`keys.switcher`+1..N, and
+  +Left/Right). `keys.switcher`+`keys.maximize` toggles the current workspace app
   between `otherSlot` and `fullSlot` (whole screen); switching apps resets it.
   Publishes each placed window to the registry, and retargets itself on the
   profile broadcast.
 - **sketchybar/** — the bar half of the readout (`items/` + `plugins/`), copied
   or symlinked into `~/.config/sketchybar`. Not loaded by Hammerspoon at all.
+- **slot-move.lua** — sends the FOCUSED window to one of the active profile's
+  slots (`keys.slotMove`+1..N), whatever app owns it. Optional, gated by
+  `config.slotMove.enabled`, and required by `init.lua` only when on.
 - **window-layout.lua** — applies a `config.profiles` entry on its hotkey:
   broadcasts the profile name, then each app → its slot, launching/matching via
   the app's config.
@@ -51,8 +61,12 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   clear overlays macOS doesn't report (Sketchybar: `external = { top = 28 }`).
 - **gap** shrinks every slot edge by N px (neighbours end up `2*gap` apart).
   Currently `0` (flush, edge-to-edge).
-- **The switcher belongs to a profile.** `C.switcher` is only the hotkey layer
-  (`modifier`, `maximizeKey`) — bound once and never rebound. Each profile
+- **All key layers live in `C.keys`** (`switcher`, `slotMove`, `profile`,
+  `maximize`), because the way these break is by colliding with each other or
+  with an app. Modules read it directly. A profile may carry its own `modifier`
+  to sit off the shared layer.
+- **The switcher belongs to a profile.** `C.keys.switcher` is only the hotkey
+  layer — bound once and never rebound. Each profile
   carries its own
   `switcher = { anchor, anchorSlot, otherSlot, fullSlot, apps, start? }`,
   and applying a profile retargets the live switcher at it. `apps` order is the
@@ -60,10 +74,17 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   and resets to, so "first app" and "key 1" can differ. Number keys are
   bound for the WIDEST `apps` list across all profiles; a key past the active
   profile's count is a no-op. `C.defaultProfile` is what the switcher targets at
-  load, before any profile hotkey is pressed. The modifier is `ctrl+alt`, kept
-  clear of `alt+cmd` — its arrows are tab-switch in most browsers and terminals,
-  and Hammerspoon grabs the event first, so binding there breaks them silently.
-  Profile hotkeys sit a level up on `ctrl+alt+cmd`.
+  load, before any profile hotkey is pressed. Its keys are `ctrl+alt`, kept
+  clear of `alt+cmd` — those arrows are tab-switch in most browsers and
+  terminals, and Hammerspoon grabs the event first, so binding there breaks them
+  silently.
+- **Slot move is the escape hatch.** The switcher and profiles only move apps
+  named in the config; `slot-move` takes whatever window has focus and drops it
+  in a slot, so an app tessera has never heard of still lands somewhere sane.
+  Its key order is the profile's optional `slots` list, else the slots its
+  `place` entries name in order of first appearance. Like the switcher's number
+  keys it binds for the longest list across all profiles and no-ops past the
+  active one's count, and it retargets on the profile broadcast.
 - **Profile broadcast** is the second decoupler: `window-layout` calls
   `core.setProfile(name)` before placing; `layout-workspace` subscribed with
   `core.onProfile`. Same-name calls are ignored, so re-pressing the active
@@ -112,9 +133,11 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
 - **Slot overlaps are intentional**: both `topRight` (Helium Dev + switcher
   Ghostty) and `mainMax` (Helium Work + Slack) are shared frames — apps that
   live in the same spot on different Spaces.
-- **Sketchybar readout.** Gated by `config.sketchybar`
-  (`enabled`/`event`/`bin`); a missing block means on wherever the binary is
-  found, so behaviour is unchanged for a config that predates the flag.
+- **Optional features are opt-in, one rule.** `schema.enabled(config, name)`
+  decides: the block has to exist, and `enabled = false` turns it off. No block
+  means off, so the config file lists everything that runs. `sketchybar` and
+  `slotMove` both go through it; anything added later should too.
+- **Sketchybar readout.** Gated by `config.sketchybar` (`enabled`/`event`/`bin`).
   `layout-workspace` shells `sketchybar --trigger <event>` on every switch,
   maximize and profile change, carrying
   `APP INDEX COUNT PROFILE MAXIMIZED APP_NAME ANCHOR_NAME FOCUSED`. The bar
@@ -141,7 +164,11 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
 
 - New app: add to `config.apps` (`{ app=, titleSuffix?, profileDir?, launch? }`).
 - New slot: add to `config.slots` (fractions of a screen).
-- New profile: add to `config.profiles` with its own `modifier`+`key` — it
-  auto-binds. `place` order matters: earlier entries reserve their window first.
-  Give it a `switcher` block too; it's required, not optional.
+- New profile: add to `config.profiles` with a `key` — it auto-binds on
+  `keys.profile`, or on its own `modifier` if it names one. `place` order
+  matters: earlier entries reserve their window first. Give it a `switcher`
+  block too; it's required, not optional. A `slots` list is optional and only
+  fixes slot-move's key order, which otherwise falls out of `place`.
+- New optional feature: give it a config block, gate it on
+  `schema.enabled(config, name)`, and require it from `init.lua` behind that.
 - Unrelated Hammerspoon features: new sibling folder + `require("folder.mod")`.
