@@ -309,14 +309,47 @@ local function isAnchor(name, app)
   return false
 end
 
--- Re-pin the anchor whenever it relaunches, in case it opens elsewhere.
-M.anchorWatcher = hs.application.watcher.new(function(name, eventType, app)
+local function centreIn(win, frame)
+  local f = win:frame()
+  local cx, cy = f.x + f.w / 2, f.y + f.h / 2
+  return cx >= frame.x and cx <= frame.x + frame.w
+     and cy >= frame.y and cy <= frame.y + frame.h
+end
+
+-- macOS raises ALL of an app's windows when it activates, so focusing Helium on
+-- the main screen pops its other profile's window over whatever the switcher
+-- has in its slot. Put the slot's own window back on top; :raise() leaves focus
+-- with the app you activated.
+local function restoreSlotTop(app)
+  local entry = workspace[currentIndex]
+  if not entry or not app:isRunning() then return end
+  if app:name() == entry.app or app:bundleID() == entry.app then return end
+
+  local slot = config.slot(maximized and sw.fullSlot or sw.otherSlot)
+  local tracked = core.window(entryKey(entry))
+  if not tracked or not centreIn(tracked, slot) then return end
+
+  -- Only intrude if a window the user did NOT activate landed in the slot.
+  local focused = app:focusedWindow()
+  for _, w in ipairs(app:allWindows()) do
+    if w:isStandard() and (not focused or w:id() ~= focused:id()) and centreIn(w, slot) then
+      tracked:raise()
+      return
+    end
+  end
+end
+
+M.appWatcher = hs.application.watcher.new(function(name, eventType, app)
+  -- Re-pin the anchor whenever it relaunches, in case it opens elsewhere.
   if eventType == hs.application.watcher.launched and isAnchor(name, app) then
     -- Position only; don't yank focus from whatever you're using.
     hs.timer.doAfter(0.5, function() placeAnchor(false) end)
+  elseif eventType == hs.application.watcher.activated and app then
+    -- Let macOS finish raising the app's own windows first.
+    hs.timer.doAfter(0.1, function() restoreSlotTop(app) end)
   end
 end)
-M.anchorWatcher:start()
+M.appWatcher:start()
 
 -- Exposed so the bar can ask for the current state when IT restarts, rather
 -- than sitting blank until the next switch.
