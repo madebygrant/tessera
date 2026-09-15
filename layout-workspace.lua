@@ -345,8 +345,9 @@ M.appWatcher = hs.application.watcher.new(function(name, eventType, app)
     -- Position only; don't yank focus from whatever you're using.
     hs.timer.doAfter(0.5, function() placeAnchor(false) end)
   elseif eventType == hs.application.watcher.activated and app then
-    -- Let macOS finish raising the app's own windows first.
-    hs.timer.doAfter(0.1, function() restoreSlotTop(app) end)
+    -- Synchronously: a deferred raise leaves the stray window visible for the
+    -- length of the delay, which reads as a flash.
+    restoreSlotTop(app)
   end
 end)
 M.appWatcher:start()
