@@ -107,9 +107,18 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   windows apart — the switcher tracks its window by id in the registry instead.
 - **The switcher never opens a second window.** It reuses the registry window,
   else adopts any window the app already has (so an app launched at login is
-  moved, not duplicated), else launches the app. Only window-layout spawns, and
+  moved, not duplicated), else launches the app (a running app with no windows
+  gets a reopen, which makes one). Only window-layout spawns, and
   only when a profile puts the same app in two slots and every existing window
   is already used by an earlier `place` entry.
+- **Windows on another Space are invisible to lookups.** Accessibility only
+  lists the current Space's windows. Before launching, `core.hasWindowOnOtherSpace`
+  checks the CoreGraphics window list. It sees every Space but can't read titles
+  without Screen Recording, so any off-Space window of the app blocks the launch
+  and shows an alert instead of opening a duplicate.
+- **The anchor's relaunch watcher only adopts.** It fires for every process of
+  the anchor's app, including ones tessera's own `open -na` spawns, so it must
+  never launch or it loops.
 - **Don't preload a command in Ghostty.** Tried and reverted: macOS has no way to
   tell a RUNNING Ghostty to open a window with a command (`+new-window` is
   Linux-only in 1.3.1; `--args` are ignored for a live instance), so it needs

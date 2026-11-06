@@ -21,6 +21,7 @@ function schema.attach(C)
   if schema.enabled(C, "slotMove") then
     assert(C.keys.slotMove, "tessera: slotMove is on but config.keys.slotMove is missing")
   end
+  schema.validateProfiles(C)
 
   C.slot = function(name)
     local s = C.slots[name]
@@ -56,6 +57,47 @@ function schema.attach(C)
   end
 
   return C
+end
+
+-- Every name a profile refers to, checked at load. Otherwise a typo surfaces as
+-- an error on a keypress, after the profile broadcast has already gone out and
+-- left the modules disagreeing about which profile is live.
+function schema.validateProfiles(C)
+  assert(C.profiles, "tessera: config has no `profiles` block")
+  assert(C.profiles[C.defaultProfile or false],
+    "tessera: defaultProfile '" .. tostring(C.defaultProfile) .. "' is not a profile")
+
+  for name, p in pairs(C.profiles) do
+    local where = "tessera: profile '" .. name .. "' "
+    local function slot(s, field)
+      assert(C.slots[s or false], where .. field .. " names unknown slot '" .. tostring(s) .. "'")
+    end
+    local function app(a, field)
+      assert(C.apps[a or false], where .. field .. " names unknown app '" .. tostring(a) .. "'")
+    end
+
+    assert(p.key, where .. "has no key")
+    local sw = p.switcher
+    assert(sw, where .. "has no switcher block")
+    app(sw.anchor, "switcher.anchor")
+    for _, field in ipairs({ "anchorSlot", "otherSlot", "fullSlot" }) do
+      slot(sw[field], "switcher." .. field)
+    end
+    assert(type(sw.apps) == "table", where .. "switcher.apps must be a list")
+    local listed = {}
+    for _, ref in ipairs(sw.apps) do
+      app(ref, "switcher.apps")
+      listed[ref] = true
+    end
+    assert(sw.start == nil or listed[sw.start],
+      where .. "starts on '" .. tostring(sw.start) .. "', which is not in its switcher apps")
+
+    for _, item in ipairs(p.place or {}) do
+      app(item.app, "place")
+      slot(item.slot, "place")
+    end
+    for _, s in ipairs(p.slots or {}) do slot(s, "slots") end
+  end
 end
 
 -- One rule for every optional feature: the block has to be there, and it can

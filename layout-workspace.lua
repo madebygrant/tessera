@@ -65,29 +65,33 @@ local function plainWindow(appName)
   return nil
 end
 
--- profileDir opens a Chromium profile in its own window; launch is raw shell.
+-- hs.application.open on a running app with no windows sends it a reopen,
+-- which makes most apps open one.
 local function launchEntry(entry)
-  if entry.launch then
-    hs.execute(entry.launch)
-  elseif entry.profileDir then
-    hs.execute(string.format(
-      '/usr/bin/open -na %q --args --profile-directory=%q --new-window',
-      entry.app, entry.profileDir
-    ))
-  else
-    hs.application.open(entry.app, 0, true)
-  end
+  if not core.spawn(entry) then hs.application.open(entry.app, 0, true) end
 end
 
--- Place an entry's window in `slotName`, launching the app if needed. Never
--- opens a second window for a running app; that's window-layout's job.
---   titleSuffix -> reuse the SPECIFIC window whose title matches.
---   remember    -> record the window in the registry (cycled apps), vs not
---                  (the anchor, which is just whatever window the app has).
-local function placeApp(entry, slotName, remember, focus)
-  local shouldFocus = focus ~= false
-  local appName = entry.app
+-- The window an entry already has, if any. Adopting one rather than opening
+-- another matters after a reboot, when the registry is empty and an app
+-- launched at login already has its window.
+--   titleSuffix -> the SPECIFIC window whose title matches.
+--   remember    -> try the registry first (cycled apps); the anchor is just
+--                  whatever window the app has.
+local function existingWindow(entry, remember)
+  if entry.titleSuffix then return titledWindow(entry.app, entry.titleSuffix) end
+  return (remember and core.window(entryKey(entry))) or plainWindow(entry.app)
+end
+
+-- Place an entry's window in `slotName`, launching the app if it has none.
+-- Never opens a second window; that's window-layout's job.
+--   opts.remember  -> record the window in the registry
+--   opts.focus     -> false leaves focus where it is
+--   opts.adoptOnly -> place an existing window or do nothing
+local function placeApp(entry, slotName, opts)
   local key = entryKey(entry)
+  local win = existingWindow(entry, opts.remember)
+  -- Checked before cancelling, so a no-op call leaves a launch in flight alone.
+  if not win and opts.adoptOnly then return end
 
   -- Cancel any poller already chasing this entry; newest call wins.
   if pending[key] then
@@ -95,60 +99,31 @@ local function placeApp(entry, slotName, remember, focus)
     pending[key] = nil
   end
 
-  if entry.titleSuffix then
-    local existing = titledWindow(appName, entry.titleSuffix)
-    if existing then
-      place(existing, slotName)
-      if shouldFocus then existing:focus() end
-      track(key, existing)
-      return
-    end
-    launchEntry(entry)
-    local elapsed = 0
-    pending[key] = hs.timer.doUntil(
-      function() return elapsed >= launchTimeout end,
-      function(timer)
-        elapsed = elapsed + pollInterval
-        local w = titledWindow(appName, entry.titleSuffix)
-        if w then
-          place(w, slotName)
-          if shouldFocus then w:focus() end
-          track(key, w)
-          timer:stop()
-          pending[key] = nil
-        end
-      end,
-      pollInterval
-    )
-    return
+  local function land(w)
+    place(w, slotName)
+    if opts.focus ~= false then w:focus() end
+    if opts.remember or entry.titleSuffix then track(key, w) end
   end
 
-  -- Adopt an existing window rather than opening another: the registry is empty
-  -- after a reboot, and an app launched at login used to get a second window
-  -- beside the one it already had.
-  local win = (remember and core.window(key)) or plainWindow(appName)
   if win then
-    place(win, slotName)
-    if shouldFocus then win:focus() end
-    if remember then track(key, win) end
+    land(win)
     return
   end
 
-  -- Not running (or no window yet): launch and grab its first window.
-  if #core.apps(appName) == 0 then
-    hs.application.open(appName, 0, true)
+  if core.hasWindowOnOtherSpace(entry.app) then
+    hs.alert.show("tessera: " .. entry.app .. " has a window on another Space; not opening another")
+    return
   end
 
+  launchEntry(entry)
   local elapsed = 0
   pending[key] = hs.timer.doUntil(
     function() return elapsed >= launchTimeout end,
     function(timer)
       elapsed = elapsed + pollInterval
-      local w = plainWindow(appName)
+      local w = existingWindow(entry, false)
       if w then
-        place(w, slotName)
-        if shouldFocus then w:focus() end
-        if remember then track(key, w) end
+        land(w)
         timer:stop()
         pending[key] = nil
       end
@@ -158,7 +133,14 @@ local function placeApp(entry, slotName, remember, focus)
 end
 
 local function placeAnchor(focus)
-  placeApp(anchorEntry, sw.anchorSlot, false, focus)
+  placeApp(anchorEntry, sw.anchorSlot, { focus = focus })
+end
+
+local function cancelPending()
+  for key, timer in pairs(pending) do
+    timer:stop()
+    pending[key] = nil
+  end
 end
 
 -- Whether the cycled app covers the anchor. A switch restores the split.
@@ -242,13 +224,15 @@ local function useProfile(name, apply)
   end
   local index = startIndex(name, block)
 
+  -- A launch still chasing the old profile would land in its slots.
+  cancelPending()
   sw, anchorEntry, workspace, currentIndex = block, anchor, apps, index
   maximized = false
   local first = workspace[currentIndex]
   -- A profile may list no cycled apps; just pin the anchor.
   if apply then
     placeAnchor(first == nil)
-    if first then placeApp(first, sw.otherSlot, true, true) end
+    if first then placeApp(first, sw.otherSlot, { remember = true }) end
   end
   pushToBar(apply and first ~= nil)
 end
@@ -262,7 +246,7 @@ local function switchWorkspace(index)
   maximized = false
   -- Anchor first and focus-free, so the switched-to app ends up focused.
   placeAnchor(false)
-  placeApp(workspace[currentIndex], sw.otherSlot, true, true)
+  placeApp(workspace[currentIndex], sw.otherSlot, { remember = true })
   pushToBar(true)
 end
 
@@ -271,11 +255,11 @@ local function toggleMaximize()
   if not entry then return end
   if maximized then
     maximized = false
-    placeAnchor(false)                          -- re-pin the anchor beside it
-    placeApp(entry, sw.otherSlot, true, true)
+    placeAnchor(false)                                   -- re-pin the anchor beside it
+    placeApp(entry, sw.otherSlot, { remember = true })
   else
     maximized = true
-    placeApp(entry, sw.fullSlot, true, true)    -- fill the screen, cover anchor
+    placeApp(entry, sw.fullSlot, { remember = true })    -- fill the screen, cover anchor
   end
   pushToBar(true)
 end
@@ -342,8 +326,11 @@ end
 M.appWatcher = hs.application.watcher.new(function(name, eventType, app)
   -- Re-pin the anchor whenever it relaunches, in case it opens elsewhere.
   if eventType == hs.application.watcher.launched and isAnchor(name, app) then
-    -- Position only; don't yank focus from whatever you're using.
-    hs.timer.doAfter(0.5, function() placeAnchor(false) end)
+    -- Position only: no focus, and no launch. Any process of the anchor's app
+    -- lands here, including the ones a launch spawns, so launching would loop.
+    hs.timer.doAfter(0.5, function()
+      placeApp(anchorEntry, sw.anchorSlot, { focus = false, adoptOnly = true })
+    end)
   elseif eventType == hs.application.watcher.activated and app then
     -- Synchronously: a deferred raise leaves the stray window visible for the
     -- length of the delay, which reads as a flash.
@@ -360,6 +347,16 @@ M.pushToBar = function() pushToBar() end
 -- later is a no-op broadcast rather than a pointless retarget.
 core.setProfile(config.defaultProfile)
 core.onProfile(function(name) useProfile(name, false) end)
+
+-- window-layout stacks every cycled app in the same slot without raising any,
+-- so put the one the index points at on top. A re-press keeps the index.
+core.onApplied(function()
+  maximized = false
+  local entry = workspace[currentIndex]
+  local win = entry and existingWindow(entry, true)
+  if win then win:raise() end
+  pushToBar(false)
+end)
 
 useProfile(config.defaultProfile, true)
 

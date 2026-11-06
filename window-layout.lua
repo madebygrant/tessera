@@ -32,17 +32,7 @@ local function findWindow(appName, suffix, used)
 end
 
 local function launchEntry(entry)
-  if entry.launch then
-    hs.execute(entry.launch)
-    return
-  end
-  if entry.profileDir then
-    hs.execute(string.format(
-      '/usr/bin/open -na %q --args --profile-directory=%q --new-window',
-      entry.app, entry.profileDir
-    ))
-    return
-  end
+  if core.spawn(entry) then return end
   -- Running but every window taken (same app in two slots): launchOrFocus would
   -- just focus one of those, so ask for a new one.
   local running = core.primaryApp(entry.app)
@@ -77,7 +67,13 @@ local function placeEntry(item, used, attempt)
     used[win:id()] = true
     return
   end
-  if attempt == 1 then launchEntry(entry) end
+  if attempt == 1 then
+    if core.hasWindowOnOtherSpace(entry.app) then
+      hs.alert.show("tessera: " .. entry.app .. " has a window on another Space; not opening another")
+      return
+    end
+    launchEntry(entry)
+  end
   if attempt < 10 then
     hs.timer.doAfter(0.5, function() placeEntry(item, used, attempt + 1) end)
   end
@@ -94,9 +90,10 @@ local function applyProfile(name, profile)
   -- Retarget the switcher before placing, so its slots match this layout.
   core.setProfile(name)
   local used = {}
-  for _, item in ipairs(profile.place) do
+  for _, item in ipairs(profile.place or {}) do
     placeEntry(item, used)
   end
+  core.applied(name)
 end
 
 -- A profile can carry its own `modifier`; otherwise it sits on the shared layer.
