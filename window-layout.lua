@@ -87,6 +87,9 @@ local function applyProfile(name, profile)
   local now = hs.timer.secondsSinceEpoch()
   if lastRun[name] and now - lastRun[name] < debounce then return end
   lastRun[name] = now
+  -- closeAll so a quick hop between profiles shows one name, not a stack.
+  hs.alert.closeAll()
+  hs.alert.show("Tessera · " .. name)
   -- Retarget the switcher before placing, so its slots match this layout.
   core.setProfile(name)
   local used = {}

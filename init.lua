@@ -47,4 +47,7 @@ if schema.enabled(config, "slotMove") then
   require("tessera.slot-move")      -- focused window -> a slot of the active profile
 end
 
+print("tessera: started, profile " .. config.defaultProfile)
+hs.alert.show("Tessera started · " .. config.defaultProfile)
+
 return config
