@@ -41,11 +41,27 @@ schema.attach(config)
 -- picked even when it was the in-repo one.
 package.loaded["tessera-config"] = config
 
-require("tessera.layout-workspace") -- half-screen app switcher
+local workspace = require("tessera.layout-workspace") -- half-screen app switcher
 require("tessera.window-layout")    -- full-desktop layout profiles
 if schema.enabled(config, "slotMove") then
   require("tessera.slot-move")      -- focused window -> a slot of the active profile
 end
+
+-- Accessibility can vanish across a reboot; without it the keys just look dead.
+local axWarned = false
+local function checkAccessibility()
+  local ok = hs.accessibilityState()
+  if not ok and not axWarned then
+    hs.alert.show("Tessera: Hammerspoon has no Accessibility permission", 5)
+    print("tessera: accessibility is off; nothing will place until it's re-enabled")
+  end
+  axWarned = not ok
+end
+checkAccessibility()
+config.axTimer = hs.timer.doEvery(60, checkAccessibility)
+
+-- hs -c 'print(require("tessera").status())'
+config.status = workspace.status
 
 print("tessera: started, profile " .. config.defaultProfile)
 hs.alert.show("Tessera started · " .. config.defaultProfile)

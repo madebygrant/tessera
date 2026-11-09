@@ -6,6 +6,9 @@
 local core = require("tessera.layout-shared")
 local config = require("tessera-config")
 
+-- Watcher and timer handles live here so they outlast the chunk.
+local M = {}
+
 -- The switcher's tracked window for an entry, unless this pass already used it.
 local function switcherWindow(entry, used)
   local w = core.window(core.entryKey(entry.app, entry.titleSuffix))
@@ -43,47 +46,55 @@ local function launchEntry(entry)
   end
 end
 
+-- A retry from a superseded apply stops, so hopping between profiles can't
+-- drop a late window into the previous layout.
+local generation = 0
+local current = nil -- { gen, name, outstanding, launch }
+
+local function settle(apply)
+  apply.outstanding = apply.outstanding - 1
+  if apply.outstanding == 0 and apply == current then core.applied(apply.name) end
+end
+
 -- Place one profile entry, retrying while the app/window appears.
-local function placeEntry(item, used, attempt)
+local function placeEntry(item, used, apply, attempt)
   attempt = attempt or 1
+  if apply ~= current then return settle(apply) end
   local entry = config.app(item.app)
   local frame = config.slot(item.slot)
 
   -- With nothing tracked yet (cold boot, switcher untouched) fall through and
   -- place it like any other entry: findWindow adopts before launching, so it
   -- still won't open a duplicate.
-  if item.useSwitcherWindow then
-    local win = switcherWindow(entry, used)
-    if win then
-      core.setFrameClamped(win, frame)
-      used[win:id()] = true
-      return
-    end
-  end
-
-  local win = findWindow(entry.app, entry.titleSuffix, used)
+  local win = item.useSwitcherWindow and switcherWindow(entry, used)
+    or findWindow(entry.app, entry.titleSuffix, used)
   if win then
     core.setFrameClamped(win, frame)
     used[win:id()] = true
-    return
+    return settle(apply)
   end
   if attempt == 1 then
-    if core.hasWindowOnOtherSpace(entry.app) then
-      hs.alert.show("tessera: " .. entry.app .. " has a window on another Space; not opening another")
-      return
+    -- A screen-change re-apply only moves what exists.
+    if not apply.launch then return settle(apply) end
+    local blocked = core.launchBlocker(entry.app)
+    if blocked then
+      hs.alert.show("tessera: " .. blocked)
+      return settle(apply)
     end
     launchEntry(entry)
   end
-  if attempt < 10 then
-    hs.timer.doAfter(0.5, function() placeEntry(item, used, attempt + 1) end)
+  if attempt >= 10 then
+    hs.alert.show("tessera: no window from " .. entry.app .. " after 5s")
+    return settle(apply)
   end
+  hs.timer.doAfter(0.5, function() placeEntry(item, used, apply, attempt + 1) end)
 end
 
 -- Absorbs a double-tap without swallowing a genuine bounce between profiles.
 local debounce = 2.0
 local lastRun = {}
 
-local function applyProfile(name, profile)
+local function applyProfile(name, profile, launch)
   local now = hs.timer.secondsSinceEpoch()
   if lastRun[name] and now - lastRun[name] < debounce then return end
   lastRun[name] = now
@@ -92,12 +103,28 @@ local function applyProfile(name, profile)
   hs.alert.show("Tessera · " .. name)
   -- Retarget the switcher before placing, so its slots match this layout.
   core.setProfile(name)
+  generation = generation + 1
+  local place = profile.place or {}
+  current = { gen = generation, name = name, outstanding = #place, launch = launch ~= false }
+  local apply = current
   local used = {}
-  for _, item in ipairs(profile.place or {}) do
-    placeEntry(item, used)
+  for _, item in ipairs(place) do
+    placeEntry(item, used, apply)
   end
-  core.applied(name)
+  if #place == 0 then core.applied(name) end
 end
+
+-- Dock/undock re-places what's open. A monitor change fires several events a
+-- few hundred ms apart, hence the delay.
+M.screenTimer = hs.timer.delayed.new(1.0, function()
+  local name = core.profile()
+  if name then
+    lastRun[name] = nil
+    applyProfile(name, config.profile(name), false)
+  end
+end)
+M.screenWatcher = hs.screen.watcher.new(function() M.screenTimer:start() end)
+M.screenWatcher:start()
 
 -- A profile can carry its own `modifier`; otherwise it sits on the shared layer.
 for name, profile in pairs(config.profiles) do
@@ -105,3 +132,5 @@ for name, profile in pairs(config.profiles) do
     applyProfile(name, profile)
   end)
 end
+
+return M

@@ -50,7 +50,14 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   `config.slotMove.enabled`, and required by `init.lua` only when on.
 - **window-layout.lua** — applies a `config.profiles` entry on its hotkey:
   broadcasts the profile name, then each app → its slot, launching/matching via
-  the app's config.
+  the app's config. Each apply has a generation; retries from a superseded
+  apply stop. Fires `core.applied` once every entry has settled. Also
+  re-applies the active profile (without launching) 1s after a screen change.
+- **check.sh** — `loadfile` on every Lua file plus `schema.attach` on each
+  config present, run inside the live Hammerspoon. Run it after any edit.
+- **Debugging** — `hs -c 'print(require("tessera").status())'` prints the
+  active profile, index, anchor, accessibility state, pending launches and the
+  tracked window per cycled app.
 
 ## Key concepts
 
@@ -161,6 +168,13 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   it. The `hs.task` handles are retained in `barTasks` — an unreferenced one gets
   collected mid-flight and the update silently goes missing. `M.pushToBar()` is
   exported so the bar can pull current state when IT restarts.
+- **Accessibility can drop across a reboot.** `init.lua` checks at load and
+  every 60s, alerting once when it's off; `launchBlocker` names it instead of
+  misreporting a window on another Space. Fix: System Settings → Privacy &
+  Security → Accessibility, remove Hammerspoon with −, re-add it, reload.
+- **The activation watcher must not touch AX on a hung app.** `restoreSlotTop`
+  runs synchronously on every activation; it filters through
+  `core.hasWindowIn` (CoreGraphics, no AX) before any Accessibility call.
 - **VoiceOver eats the switcher.** `ctrl+alt` is VoiceOver's VO modifier, so
   every switcher hotkey stops working while VoiceOver is on (cmd+F5). Nothing
   errors, the keys just do nothing. If they go dead for no reason, check that

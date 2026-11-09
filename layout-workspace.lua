@@ -55,14 +55,18 @@ local function plainWindow(appName)
   local function claimable(w)
     return w and w:isStandard() and not core.endsWithAny(w:title() or "", reserved)
   end
+  -- One AX pass per process: mains win, else the first claimable window seen.
+  local fallback
   for _, a in ipairs(core.apps(appName)) do
     local main = a:mainWindow()
     if claimable(main) then return main end
+    if not fallback then
+      for _, w in ipairs(a:allWindows()) do
+        if claimable(w) then fallback = w break end
+      end
+    end
   end
-  for _, w in ipairs(core.appWindows(appName)) do
-    if claimable(w) then return w end
-  end
-  return nil
+  return fallback
 end
 
 -- hs.application.open on a running app with no windows sends it a reopen,
@@ -110,26 +114,27 @@ local function placeApp(entry, slotName, opts)
     return
   end
 
-  if core.hasWindowOnOtherSpace(entry.app) then
-    hs.alert.show("tessera: " .. entry.app .. " has a window on another Space; not opening another")
+  local blocked = core.launchBlocker(entry.app)
+  if blocked then
+    hs.alert.show("tessera: " .. blocked)
     return
   end
 
   launchEntry(entry)
   local elapsed = 0
-  pending[key] = hs.timer.doUntil(
-    function() return elapsed >= launchTimeout end,
-    function(timer)
-      elapsed = elapsed + pollInterval
-      local w = existingWindow(entry, false)
-      if w then
-        land(w)
-        timer:stop()
-        pending[key] = nil
-      end
-    end,
-    pollInterval
-  )
+  pending[key] = hs.timer.doEvery(pollInterval, function()
+    elapsed = elapsed + pollInterval
+    local w = existingWindow(entry, false)
+    if not w and elapsed < launchTimeout then return end
+    pending[key]:stop()
+    pending[key] = nil
+    if w then
+      land(w)
+    else
+      -- Say so, or the keys just look dead until the window finally shows.
+      hs.alert.show("tessera: no window from " .. entry.app .. " after " .. launchTimeout .. "s")
+    end
+  end)
 end
 
 local function placeAnchor(focus)
@@ -212,7 +217,9 @@ local function startIndex(name, s)
 end
 
 -- Retargets state only; window-layout places the windows. Except at load,
--- where nothing else has run yet.
+-- where nothing else has run yet: then it places too, without focus, so a
+-- reload doesn't yank you out of whatever you were doing. `launchAtLoad =
+-- false` in the config keeps load from opening apps that aren't running.
 local function useProfile(name, apply)
   -- Resolve everything that can throw (unknown app, bad `start`) before any of
   -- it lands, so a bad profile leaves the live one intact instead of half-swapped.
@@ -231,10 +238,13 @@ local function useProfile(name, apply)
   local first = workspace[currentIndex]
   -- A profile may list no cycled apps; just pin the anchor.
   if apply then
-    placeAnchor(first == nil)
-    if first then placeApp(first, sw.otherSlot, { remember = true }) end
+    local adoptOnly = config.launchAtLoad == false
+    placeApp(anchorEntry, sw.anchorSlot, { focus = false, adoptOnly = adoptOnly })
+    if first then
+      placeApp(first, sw.otherSlot, { remember = true, focus = false, adoptOnly = adoptOnly })
+    end
   end
-  pushToBar(apply and first ~= nil)
+  pushToBar(false)
 end
 
 local function switchWorkspace(index)
@@ -288,6 +298,7 @@ hs.hotkey.bind(keys.switcher, keys.maximize, toggleMaximize)
 
 -- Watcher events carry a name; an entry may hold a bundle id instead.
 local function isAnchor(name, app)
+  if not anchorEntry then return false end
   if name == anchorEntry.app then return true end
   if app and app:bundleID() == anchorEntry.app then return true end
   return false
@@ -310,6 +321,9 @@ local function restoreSlotTop(app)
   if app:name() == entry.app or app:bundleID() == entry.app then return end
 
   local slot = config.slot(maximized and sw.fullSlot or sw.otherSlot)
+  -- CoreGraphics first: it needs no Accessibility call into the activated app,
+  -- which on a hung app blocks Hammerspoon until the AX timeout.
+  if not core.hasWindowIn(app:pid(), slot) then return end
   local tracked = core.window(entryKey(entry))
   if not tracked or not centreIn(tracked, slot) then return end
 
@@ -342,6 +356,26 @@ M.appWatcher:start()
 -- Exposed so the bar can ask for the current state when IT restarts, rather
 -- than sitting blank until the next switch.
 M.pushToBar = function() pushToBar() end
+
+-- For `hs -c 'print(require("tessera").status())'` when the keys go quiet.
+M.status = function()
+  local lines = {
+    "profile:   " .. tostring(core.profile()),
+    "index:     " .. currentIndex .. "/" .. #workspace
+      .. (maximized and " (maximized)" or ""),
+    "anchor:    " .. (anchorEntry and anchorEntry.app or "none"),
+    "ax:        " .. tostring(hs.accessibilityState()),
+    "pending:   " .. (next(pending) and table.concat(
+      (function() local t = {} for k in pairs(pending) do t[#t + 1] = (k:gsub("%z", "/")) end return t end)(), ", ")
+      or "none"),
+  }
+  for i, entry in ipairs(workspace) do
+    local w = core.window(entryKey(entry))
+    lines[#lines + 1] = ("  %d. %-12s %s"):format(i, entry.app,
+      w and ("#" .. w:id() .. " " .. tostring(w:title())) or "(no window tracked)")
+  end
+  return table.concat(lines, "\n")
+end
 
 -- Record the starting profile before subscribing, so pressing its own hotkey
 -- later is a no-op broadcast rather than a pointless retarget.

@@ -142,13 +142,42 @@ function core.hasWindowOnOtherSpace(name)
   for _, info in ipairs(hs.window.list(true) or {}) do
     local b = info.kCGWindowBounds
     -- Size floor skips the tiny utility surfaces some apps keep at layer 0.
+    -- Onscreen ones are on this Space; AX missing them means no permission.
     if pids[info.kCGWindowOwnerPID] and info.kCGWindowLayer == 0
+      and not info.kCGWindowIsOnscreen
       and not seen[info.kCGWindowNumber]
       and b and b.Width >= 100 and b.Height >= 100 then
       return true
     end
   end
   return false
+end
+
+-- From the CoreGraphics list, so no Accessibility call into a possibly hung app.
+function core.hasWindowIn(pid, frame)
+  for _, info in ipairs(hs.window.list(true) or {}) do
+    local b = info.kCGWindowBounds
+    if info.kCGWindowOwnerPID == pid and info.kCGWindowLayer == 0 and b then
+      local cx, cy = b.X + b.Width / 2, b.Y + b.Height / 2
+      if cx >= frame.x and cx <= frame.x + frame.w
+        and cy >= frame.y and cy <= frame.y + frame.h then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- Why tessera shouldn't launch an app it found no window for, or nil. Without
+-- Accessibility every window looks missing, so that's checked first.
+function core.launchBlocker(name)
+  if not hs.accessibilityState() then
+    return "Hammerspoon has lost Accessibility permission. Re-enable it in System Settings"
+  end
+  if core.hasWindowOnOtherSpace(name) then
+    return name .. " has a window on another Space; not opening another"
+  end
+  return nil
 end
 
 -- Handles are held until exit: an unreferenced hs.task can be collected

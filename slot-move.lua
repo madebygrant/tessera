@@ -38,7 +38,8 @@ local function moveTo(index)
   local slot = slots[index]
   if not slot then return end
   local win = hs.window.focusedWindow()
-  if win then core.setFrameClamped(win, config.slot(slot)) end
+  -- A sheet or palette stretched to a slot is never what was meant.
+  if win and win:isStandard() then core.setFrameClamped(win, config.slot(slot)) end
 end
 
 -- Widest slot list across all profiles, so a profile switch never rebinds.

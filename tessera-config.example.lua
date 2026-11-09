@@ -147,4 +147,8 @@ C.profiles = {
 -- Which profile is live at startup, before you press anything.
 C.defaultProfile = "dev"
 
+-- Load places that profile's windows without taking focus. Set false to only
+-- move apps already running, rather than opening the missing ones too.
+C.launchAtLoad = true
+
 return C
