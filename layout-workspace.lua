@@ -116,7 +116,7 @@ local function placeApp(entry, slotName, opts)
 
   local blocked = core.launchBlocker(entry.app)
   if blocked then
-    hs.alert.show("tessera: " .. blocked)
+    core.alert(blocked)
     return
   end
 
@@ -132,7 +132,7 @@ local function placeApp(entry, slotName, opts)
       land(w)
     else
       -- Say so, or the keys just look dead until the window finally shows.
-      hs.alert.show("tessera: no window from " .. entry.app .. " after " .. launchTimeout .. "s")
+      core.alert("no window from " .. entry.app .. " after " .. launchTimeout .. "s")
     end
   end)
 end

@@ -78,13 +78,13 @@ local function placeEntry(item, used, apply, attempt)
     if not apply.launch then return settle(apply) end
     local blocked = core.launchBlocker(entry.app)
     if blocked then
-      hs.alert.show("tessera: " .. blocked)
+      core.alert(blocked)
       return settle(apply)
     end
     launchEntry(entry)
   end
   if attempt >= 10 then
-    hs.alert.show("tessera: no window from " .. entry.app .. " after 5s")
+    core.alert("no window from " .. entry.app .. " after 5s")
     return settle(apply)
   end
   hs.timer.doAfter(0.5, function() placeEntry(item, used, apply, attempt + 1) end)
@@ -98,9 +98,6 @@ local function applyProfile(name, profile, launch)
   local now = hs.timer.secondsSinceEpoch()
   if lastRun[name] and now - lastRun[name] < debounce then return end
   lastRun[name] = now
-  -- closeAll so a quick hop between profiles shows one name, not a stack.
-  hs.alert.closeAll()
-  hs.alert.show("Tessera · " .. name)
   -- Retarget the switcher before placing, so its slots match this layout.
   core.setProfile(name)
   generation = generation + 1

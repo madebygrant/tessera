@@ -168,6 +168,16 @@ function core.hasWindowIn(pid, frame)
   return false
 end
 
+-- Errors only, and each message once per 5s: a profile apply hits the same
+-- blocker for every entry, which used to stack six copies on screen.
+local lastAlert = {}
+function core.alert(msg)
+  local now = hs.timer.secondsSinceEpoch()
+  if lastAlert[msg] and now - lastAlert[msg] < 5 then return end
+  lastAlert[msg] = now
+  hs.alert.show("tessera: " .. msg)
+end
+
 -- Why tessera shouldn't launch an app it found no window for, or nil. Without
 -- Accessibility every window looks missing, so that's checked first.
 function core.launchBlocker(name)

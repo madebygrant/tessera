@@ -52,7 +52,7 @@ local axWarned = false
 local function checkAccessibility()
   local ok = hs.accessibilityState()
   if not ok and not axWarned then
-    hs.alert.show("Tessera: Hammerspoon has no Accessibility permission", 5)
+    hs.alert.show("tessera: Hammerspoon has no Accessibility permission", 5)
     print("tessera: accessibility is off; nothing will place until it's re-enabled")
   end
   axWarned = not ok
@@ -64,6 +64,5 @@ config.axTimer = hs.timer.doEvery(60, checkAccessibility)
 config.status = workspace.status
 
 print("tessera: started, profile " .. config.defaultProfile)
-hs.alert.show("Tessera started · " .. config.defaultProfile)
 
 return config

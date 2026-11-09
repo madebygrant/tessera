@@ -172,8 +172,14 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   exported so the bar can pull current state when IT restarts.
 - **Accessibility can drop across a reboot.** `init.lua` checks at load and
   every 60s, alerting once when it's off; `launchBlocker` names it instead of
-  misreporting a window on another Space. Fix: System Settings → Privacy &
-  Security → Accessibility, remove Hammerspoon with −, re-add it, reload.
+  misreporting a window on another Space. The switch can show ON while the
+  entry is stale and every lookup returns nothing. Fix:
+  `tccutil reset Accessibility org.hammerspoon.Hammerspoon`, grant the prompt,
+  then QUIT and reopen Hammerspoon: `hs.reload()` isn't enough, AX calls stay
+  empty until the process restarts.
+- **Alerts are errors only**, via `core.alert`, which shows each message once
+  per 5s so a profile apply can't stack one per entry. Status goes to the
+  console and the Sketchybar readout, not alerts.
 - **The activation watcher must not touch AX on a hung app.** `restoreSlotTop`
   runs synchronously on every activation; it filters through
   `core.hasWindowIn` (CoreGraphics, no AX) before any Accessibility call.
