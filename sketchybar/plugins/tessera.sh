@@ -3,8 +3,10 @@
 # Optional: a shared palette file, if your bar config has one.
 [ -f "$CONFIG_DIR/shared.sh" ] && source "$CONFIG_DIR/shared.sh"
 
-# Export TESSERA_LABEL_COLOR from your own config to theme this.
+# Export TESSERA_LABEL_COLOR (profile) and TESSERA_APP_COLOR (app name) from
+# your own config to theme this.
 LABEL_COLOR="${TESSERA_LABEL_COLOR:-0xffffffff}"
+APP_COLOR="${TESSERA_APP_COLOR:-$LABEL_COLOR}"
 
 STATE="${TMPDIR:-/tmp}/sketchybar_tessera"
 FRONT_STATE="${TMPDIR:-/tmp}/sketchybar_tessera_front"
@@ -32,12 +34,6 @@ pretty () {
 }
 
 case "$SENDER" in
-  mouse.clicked)
-    # Deferred so the IPC call returns before the chooser grabs focus, or the
-    # hs CLI aborts.
-    hs_run 'hs.timer.doAfter(0, require("tessera").picker)'
-    exit 0
-    ;;
   mouse.scrolled)
     # Hammerspoon throttles the burst a trackpad sends.
     case "${SCROLL_DELTA:-0}" in
@@ -69,16 +65,28 @@ LABEL=$(echo "$PROFILE" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1 \2/g' | tr '[:lower:]'
 
 case "$COUNT" in ''|*[!0-9]*) COUNT=0 ;; esac
 
+# A label takes one colour, so with an app showing, the profile moves into the
+# icon slot and the app name gets the label and its own colour.
+ICON=""
+LABEL_FG="$LABEL_COLOR"
 # Only inside the layout. An old state file without APP falls back to the number.
 if [ "$COUNT" -gt 0 ] && { [ "$FRONT" = "$APP_NAME" ] || [ "$FRONT" = "$ANCHOR_NAME" ]; }; then
   if [ -n "$APP" ]; then
-    LABEL="${LABEL} · $(pretty "$APP")"
+    ICON="${LABEL} /"
+    LABEL=$(pretty "$APP" | tr '[:lower:]' '[:upper:]')
+    LABEL_FG="$APP_COLOR"
   else
     LABEL="${LABEL} ${INDEX}/${COUNT}"
   fi
 fi
 
+# Space-separated items this label stands in for, e.g. a front-app readout.
+HIDE=()
+for item in ${TESSERA_HIDE_ITEMS:-}; do HIDE+=(--set "$item" drawing=off); done
+
 sketchybar --set "$NAME" \
-           icon="" \
+           icon="$ICON" \
+           icon.color="$LABEL_COLOR" \
            label="$LABEL" \
-           label.color="$LABEL_COLOR"
+           label.color="$LABEL_FG" \
+           "${HIDE[@]}"

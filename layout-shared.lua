@@ -70,6 +70,48 @@ function core.setFrameClamped(win, target)
   hs.timer.doAfter(0.4, function() clampInto(win) end)
 end
 
+local MODS = { "ctrl", "alt", "shift", "cmd" }
+local GLYPH = { ctrl = "⌃", alt = "⌥", shift = "⇧", cmd = "⌘" }
+local ALIAS = {
+  control = "ctrl", option = "alt", opt = "alt", command = "cmd",
+  ["⌃"] = "ctrl", ["⌥"] = "alt", ["⇧"] = "shift", ["⌘"] = "cmd",
+}
+
+-- hs.hotkey takes a list or a "ctrl-alt" string; normalise either to a set.
+function core.modSet(mods)
+  local set = {}
+  if type(mods) == "string" then
+    local list = {}
+    for m in mods:gmatch("[^%s%-%+]+") do list[#list + 1] = m end
+    mods = list
+  end
+  for _, m in ipairs(mods or {}) do
+    m = m:lower()
+    set[ALIAS[m] or m] = true
+  end
+  return set
+end
+
+function core.sameMods(a, b)
+  for _, m in ipairs(MODS) do
+    if (a[m] or false) ~= (b[m] or false) then return false end
+  end
+  return true
+end
+
+function core.modGlyphs(set)
+  local out = ""
+  for _, m in ipairs(MODS) do
+    if set[m] then out = out .. GLYPH[m] end
+  end
+  return out
+end
+
+function core.keyLabel(key)
+  local names = { left = "←", right = "→", up = "↑", down = "↓", space = "Space" }
+  return names[key] or tostring(key):upper()
+end
+
 -- A config ref for display: heliumDev -> Helium Dev.
 function core.prettyName(ref)
   local s = tostring(ref):gsub("([%l%d])(%u)", "%1 %2")
@@ -281,11 +323,19 @@ function core.onProfile(fn)
   profileHandlers[#profileHandlers + 1] = fn
 end
 
+-- Per screen setup, so undocking and re-docking each return to the last
+-- profile used with those screens.
+function core.profileKey()
+  local names = {}
+  for _, s in ipairs(hs.screen.allScreens()) do names[#names + 1] = s:name() or "?" end
+  table.sort(names)
+  return "tessera.profile." .. table.concat(names, "|")
+end
+
 function core.setProfile(name)
   if name == activeProfile then return end
   activeProfile = name
-  -- Read back at load, so a reload or reboot lands on the same layout.
-  hs.settings.set("tessera.profile", name)
+  hs.settings.set(core.profileKey(), name)
   for _, fn in ipairs(profileHandlers) do fn(name) end
 end
 

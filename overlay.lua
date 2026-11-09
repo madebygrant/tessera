@@ -19,47 +19,8 @@ local DIM = { white = 1, alpha = 0.7 }
 local WHITE = { white = 1, alpha = 1 }
 local FILL = { white = 0.05, alpha = 0.55 }
 
-local MODS = { "ctrl", "alt", "shift", "cmd" }
-local GLYPH = { ctrl = "⌃", alt = "⌥", shift = "⇧", cmd = "⌘" }
-local ALIAS = {
-  control = "ctrl", option = "alt", opt = "alt", command = "cmd",
-  ["⌃"] = "ctrl", ["⌥"] = "alt", ["⇧"] = "shift", ["⌘"] = "cmd",
-}
-
--- hs.hotkey takes a list or a "ctrl-alt" string; normalise either to a set.
-local function modSet(mods)
-  local set = {}
-  if type(mods) == "string" then
-    local list = {}
-    for m in mods:gmatch("[^%s%-%+]+") do list[#list + 1] = m end
-    mods = list
-  end
-  for _, m in ipairs(mods or {}) do
-    m = m:lower()
-    set[ALIAS[m] or m] = true
-  end
-  return set
-end
-
-local function sameMods(a, b)
-  for _, m in ipairs(MODS) do
-    if (a[m] or false) ~= (b[m] or false) then return false end
-  end
-  return true
-end
-
-local function glyphs(set)
-  local out = ""
-  for _, m in ipairs(MODS) do
-    if set[m] then out = out .. GLYPH[m] end
-  end
-  return out
-end
-
-local function keyLabel(key)
-  local names = { left = "←", right = "→", up = "↑", down = "↓", space = "Space" }
-  return names[key] or key:upper()
-end
+local modSet, sameMods, glyphs, keyLabel =
+  core.modSet, core.sameMods, core.modGlyphs, core.keyLabel
 
 local switcherMods = modSet(config.keys.switcher)
 local slotMoveMods = slotMove and modSet(config.keys.slotMove) or nil
@@ -153,11 +114,16 @@ local function drawSwitcher()
 
   local anchorFrame = config.slot(st.anchorSlot)
   local k = scaleFor(anchorFrame)
-  box(anchorFrame,
-    text(core.prettyName(st.anchor) .. "\n", 30 * k, WHITE, true)
-      .. text("anchor", 15 * k, DIM), false)
-
   local otherFrame = config.slot(st.otherSlot)
+  -- A full-screen profile shares one frame; the list box alone says it all.
+  local shared = anchorFrame.x == otherFrame.x and anchorFrame.y == otherFrame.y
+    and anchorFrame.w == otherFrame.w and anchorFrame.h == otherFrame.h
+  if not shared then
+    box(anchorFrame,
+      text(core.prettyName(st.anchor) .. "\n", 30 * k, WHITE, true)
+        .. text("anchor", 15 * k, DIM), false)
+  end
+
   k = scaleFor(otherFrame)
   local body = text("", 22 * k, WHITE, false, "left")
   for i, ref in ipairs(st.apps) do
@@ -167,9 +133,6 @@ local function drawSwitcher()
   end
   local hints = mods .. "← →  cycle      " .. mods .. keyLabel(config.keys.maximize)
     .. (st.maximized and "  restore" or "  maximize")
-  if config.keys.picker then
-    hints = hints .. "      " .. mods .. keyLabel(config.keys.picker) .. "  picker"
-  end
   body = body .. text("\n" .. hints, 14 * k, DIM, false, "left")
   box(otherFrame, body, true)
 

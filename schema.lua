@@ -54,21 +54,27 @@ function schema.attach(C)
     return true
   end
 
-  -- The profile to run on the screens connected now: `preferred` if it fits,
-  -- else defaultProfile, else the first fitting one by name. With none fitting,
-  -- defaultProfile anyway, since slots fall back to the primary screen.
-  C.bestProfile = function(preferred)
-    if preferred and C.profiles[preferred] and C.profileFits(preferred) then
-      return preferred
+  -- The profile to run on the screens connected now. `saved` (last used with
+  -- this screen setup) wins whenever it fits: it was a choice. Without one,
+  -- only fitting profiles needing the MOST screens qualify, so a docked layout
+  -- beats the laptop one; among those `current`, then defaultProfile, then the
+  -- first by name. None fitting: defaultProfile.
+  C.bestProfile = function(saved, current)
+    if saved and C.profiles[saved] and C.profileFits(saved) then return saved end
+    local most, fitting = -1, {}
+    for name, p in pairs(C.profiles) do
+      if C.profileFits(name) then
+        local n = #(p.screens or {})
+        if n > most then most, fitting = n, {} end
+        if n == most then fitting[name] = true end
+      end
     end
-    if C.profileFits(C.defaultProfile) then return C.defaultProfile end
+    if current and fitting[current] then return current end
+    if fitting[C.defaultProfile] then return C.defaultProfile end
     local names = {}
-    for name in pairs(C.profiles) do names[#names + 1] = name end
+    for name in pairs(fitting) do names[#names + 1] = name end
     table.sort(names)
-    for _, name in ipairs(names) do
-      if C.profileFits(name) then return name end
-    end
-    return C.defaultProfile
+    return names[1] or C.defaultProfile
   end
 
   -- Title suffixes other entries claim for the same app, so an untitled entry

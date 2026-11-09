@@ -62,7 +62,6 @@ C.apps = {
 -- Every shortcut in one place, so you can spot a clash before it bites.
 --   switcher +1..N, +Left/Right   the active profile's apps
 --   switcher +maximize            fill the screen with the current one
---   switcher +picker              fuzzy picker over apps and layouts
 --   slotMove +1..N                throw the focused window into a slot
 --   profile  +its own key         apply that layout
 -- Steer clear of alt+cmd. Its arrows switch tabs in most browsers and
@@ -73,7 +72,6 @@ C.keys = {
   slotMove = { "ctrl", "alt", "shift" },
   profile  = { "ctrl", "alt", "cmd" },
   maximize = "f",
-  picker   = "space",
 }
 
 -- ================= SKETCHYBAR =================

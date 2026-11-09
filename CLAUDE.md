@@ -60,9 +60,6 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   because macOS silently disables slow taps. Optional, gated by
   `config.overlay`. `require("tessera.overlay").show("switcher")` draws it
   without keys; `visible()` reports state.
-- **picker.lua** — `hs.chooser` over the current profile's apps, maximize and
-  every layout, with its own subsequence ranking (`searchSubText` off). Bound to
-  `keys.switcher`+`keys.picker`; the Sketchybar item opens it on click.
 - **check.sh** — `loadfile` on every Lua file plus `schema.attach` on each
   config present, run inside the live Hammerspoon. Run it after any edit.
 - **Debugging** — `hs -c 'print(require("tessera").status())'` prints the
@@ -91,9 +88,10 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   and resets to, so "first app" and "key 1" can differ. Number keys are
   bound for the WIDEST `apps` list across all profiles; a key past the active
   profile's count is a no-op. At load the switcher targets `config.startProfile`:
-  the last profile used (`hs.settings` key `tessera.profile`, written by
-  `core.setProfile`) if `config.bestProfile` says the screens still suit it,
-  else `C.defaultProfile`. Load places it WITHOUT focus, so
+  the last profile used with the connected screens (`hs.settings` key
+  `core.profileKey()`, one per sorted set of screen names, written by
+  `core.setProfile`) if `config.bestProfile` accepts it, else
+  `C.defaultProfile`. Load places it WITHOUT focus, so
   a reload doesn't steal focus; `C.launchAtLoad = false` also stops load
   opening apps that aren't running. Its keys are `ctrl+alt`, kept
   clear of `alt+cmd` — those arrows are tab-switch in most browsers and
@@ -107,11 +105,20 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   keys it binds for the longest list across all profiles and no-ops past the
   active one's count, and it retargets on the profile broadcast.
 - **Profiles can need screens.** A profile's optional `screens` list names
-  `C.screens` refs that must be connected. `bestProfile(preferred)` keeps
-  `preferred` if it fits, else `defaultProfile`, else the first fitting name
-  alphabetically, else `defaultProfile` anyway. The screen watcher uses it, so
-  dock/undock switches profile (without launching) when the current one no
-  longer fits.
+  `C.screens` refs that must be connected. `bestProfile(saved, current)`
+  returns `saved` (the last profile used with this screen setup) whenever it
+  fits, since that was a choice: picking `offgrid` at the desk sticks across
+  reloads and display wake. With nothing saved, only fitting profiles needing
+  the MOST screens qualify, so a docked layout beats a no-`screens` laptop one;
+  among those `current`, then `defaultProfile`, then the first by name. None
+  fitting gives `defaultProfile`. Saves are per setup, so undocking returns to
+  the last laptop profile and re-docking to the last docked one, without
+  launching anything.
+- **Full-screen profiles share one slot** (`offgrid`: anchor, cycled apps and
+  fullSlot all `mainMax`). The anchor can also be in `apps`, so it has a number
+  key. `restoreSlotTop` returns early when the window you activated is itself
+  in the slot, or ⌘-Tab to another app would get covered straight back. The
+  overlay skips the anchor box when the anchor and other slots share a frame.
 - **Profile broadcast** is the second decoupler: `window-layout` calls
   `core.setProfile(name)` before placing; `layout-workspace` subscribed with
   `core.onProfile`. Same-name calls are ignored, so re-pressing the active
@@ -177,17 +184,21 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   `layout-workspace` shells `sketchybar --trigger <event>` on every switch,
   maximize and profile change, carrying
   `APP INDEX COUNT PROFILE MAXIMIZED APP_NAME ANCHOR_NAME FOCUSED`. The bar
-  shows `PROFILE · App` (the APP ref prettified, as `core.prettyName` does), and
+  shows `PROFILE / APP` (the APP ref split on camelCase and upcased), and
   drops the app while the front app is neither the current cycled app nor the
-  anchor. Clicking the item opens the picker; scrolling cycles apps, throttled
-  to one step per 0.4s in `init.lua`'s `config.cycle` since a trackpad sends a
-  burst. The click defers the picker a tick, or the `hs` CLI aborts when the
-  chooser takes focus mid-call. `FOCUSED` is false for a
+  anchor. Scrolling on the item cycles apps, throttled to one step per 0.4s in
+  `init.lua`'s `config.cycle` since a trackpad sends a burst. `FOCUSED` is false for a
   profile retarget, which places nothing and so must not claim the front app.
   The bar side is vendored in `sketchybar/`, symlinked from
   `~/.config/sketchybar/{items,plugins}/tessera.sh` on this machine, so edit the
   repo copy. It keeps its own state under `$TMPDIR` because SketchyBar runs each
-  event in a separate process; `TESSERA_LABEL_COLOR` is the only theming hook.
+  event in a separate process; `TESSERA_LABEL_COLOR` themes the profile and
+  `TESSERA_APP_COLOR` the app name (a label takes one colour, so with an app
+  showing the profile sits in the icon slot, which the item script gives the
+  label's font and baseline), and
+  `TESSERA_HIDE_ITEMS` (space-separated item names, set in the bar's
+  `shared.sh`) are hidden once tessera has a profile to show; this machine
+  hides `front_app` and `sep_tessera`.
   Missing sketchybar is a no-op, so the trigger is safe on a machine without
   it. The `hs.task` handles are retained in `barTasks` — an unreferenced one gets
   collected mid-flight and the update silently goes missing. `M.pushToBar()` is

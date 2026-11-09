@@ -116,7 +116,7 @@ end
 -- Picks the profile that suits the new screens (the current one if it still
 -- does), and never launches.
 M.screenTimer = hs.timer.delayed.new(1.0, function()
-  local name = config.bestProfile(core.profile())
+  local name = config.bestProfile(hs.settings.get(core.profileKey()), core.profile())
   lastRun[name] = nil
   applyProfile(name, config.profile(name), false)
 end)

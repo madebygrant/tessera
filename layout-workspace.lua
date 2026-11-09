@@ -327,8 +327,11 @@ local function restoreSlotTop(app)
   local tracked = core.window(entryKey(entry))
   if not tracked or not centreIn(tracked, slot) then return end
 
-  -- Only intrude if a window the user did NOT activate landed in the slot.
+  -- Only intrude if a window the user did NOT activate landed in the slot. If
+  -- the one they activated is in the slot (every app shares it in a laptop
+  -- profile), they chose it: leave it on top.
   local focused = app:focusedWindow()
+  if focused and centreIn(focused, slot) then return end
   for _, w in ipairs(app:allWindows()) do
     if w:isStandard() and (not focused or w:id() ~= focused:id()) and centreIn(w, slot) then
       tracked:raise()
@@ -357,7 +360,7 @@ M.appWatcher:start()
 -- than sitting blank until the next switch.
 M.pushToBar = function() pushToBar() end
 
--- Read by the overlay and the picker; copies, so they can't mutate live state.
+-- Read by the overlay; copies, so they can't mutate live state.
 M.state = function()
   local apps = {}
   for i, ref in ipairs(sw and sw.apps or {}) do apps[i] = ref end
@@ -372,9 +375,7 @@ M.state = function()
   }
 end
 
-M.switchTo = function(i) if i >= 1 and i <= #workspace then switchWorkspace(i) end end
 M.cycle = function(step) switchWorkspace(currentIndex + step) end
-M.toggleMaximize = toggleMaximize
 
 -- For `hs -c 'print(require("tessera").status())'` when the keys go quiet.
 M.status = function()
