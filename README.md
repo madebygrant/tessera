@@ -55,8 +55,17 @@ Reload Hammerspoon (menu bar → Reload Config, or `hs.reload()`).
 - **screenInsets** carve pixels off a screen before slots compute (e.g. clearing
   a Sketchybar overlay macOS doesn't report).
 - **gap** shrinks every slot edge by N px so neighbours sit apart.
-- **Sketchybar readout** (optional) reports the active profile and slot number
-  to a [SketchyBar](https://github.com/FelixKratz/SketchyBar) item.
+- **Sketchybar readout** (optional) shows the active profile and app in a
+  [SketchyBar](https://github.com/FelixKratz/SketchyBar) item. Click it for the
+  picker; scroll on it to cycle apps.
+- **Overlay** (optional): hold the switcher or slot-move modifiers on their own
+  and the active profile's slots appear on screen, labelled with their keys.
+- **Picker**: `keys.switcher`+`keys.picker` opens a fuzzy chooser over the
+  current apps, maximize and every layout.
+- **Profiles remember and follow screens.** Load resumes the last profile used.
+  A profile's optional `screens` list names the monitors it needs; on dock or
+  undock tessera keeps the current profile if it still fits, else switches to
+  one that does.
 
 ## Hotkeys
 

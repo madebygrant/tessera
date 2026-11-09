@@ -113,12 +113,12 @@ end
 
 -- Dock/undock re-places what's open. A monitor change fires several events a
 -- few hundred ms apart, hence the delay.
+-- Picks the profile that suits the new screens (the current one if it still
+-- does), and never launches.
 M.screenTimer = hs.timer.delayed.new(1.0, function()
-  local name = core.profile()
-  if name then
-    lastRun[name] = nil
-    applyProfile(name, config.profile(name), false)
-  end
+  local name = config.bestProfile(core.profile())
+  lastRun[name] = nil
+  applyProfile(name, config.profile(name), false)
 end)
 M.screenWatcher = hs.screen.watcher.new(function() M.screenTimer:start() end)
 M.screenWatcher:start()
@@ -129,5 +129,7 @@ for name, profile in pairs(config.profiles) do
     applyProfile(name, profile)
   end)
 end
+
+M.apply = function(name) applyProfile(name, config.profile(name)) end
 
 return M

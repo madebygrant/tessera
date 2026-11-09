@@ -46,6 +46,31 @@ function schema.attach(C)
     return p
   end
 
+  -- Every screen the profile's `screens` list names is connected.
+  C.profileFits = function(name)
+    for _, ref in ipairs(C.profile(name).screens or {}) do
+      if not core.findScreen(C.screens[ref]) then return false end
+    end
+    return true
+  end
+
+  -- The profile to run on the screens connected now: `preferred` if it fits,
+  -- else defaultProfile, else the first fitting one by name. With none fitting,
+  -- defaultProfile anyway, since slots fall back to the primary screen.
+  C.bestProfile = function(preferred)
+    if preferred and C.profiles[preferred] and C.profileFits(preferred) then
+      return preferred
+    end
+    if C.profileFits(C.defaultProfile) then return C.defaultProfile end
+    local names = {}
+    for name in pairs(C.profiles) do names[#names + 1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      if C.profileFits(name) then return name end
+    end
+    return C.defaultProfile
+  end
+
   -- Title suffixes other entries claim for the same app, so an untitled entry
   -- can skip their windows.
   C.reservedSuffixes = function(appName)
@@ -97,6 +122,9 @@ function schema.validateProfiles(C)
       slot(item.slot, "place")
     end
     for _, s in ipairs(p.slots or {}) do slot(s, "slots") end
+    for _, ref in ipairs(p.screens or {}) do
+      assert(C.screens[ref], where .. "screens names unknown screen '" .. tostring(ref) .. "'")
+    end
   end
 end
 

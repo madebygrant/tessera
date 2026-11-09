@@ -62,6 +62,7 @@ C.apps = {
 -- Every shortcut in one place, so you can spot a clash before it bites.
 --   switcher +1..N, +Left/Right   the active profile's apps
 --   switcher +maximize            fill the screen with the current one
+--   switcher +picker              fuzzy picker over apps and layouts
 --   slotMove +1..N                throw the focused window into a slot
 --   profile  +its own key         apply that layout
 -- Steer clear of alt+cmd. Its arrows switch tabs in most browsers and
@@ -72,6 +73,7 @@ C.keys = {
   slotMove = { "ctrl", "alt", "shift" },
   profile  = { "ctrl", "alt", "cmd" },
   maximize = "f",
+  picker   = "space",
 }
 
 -- ================= SKETCHYBAR =================
@@ -83,6 +85,15 @@ C.keys = {
 C.sketchybar = {
   enabled = false,
   event   = "tessera_switcher",
+}
+
+-- ================= OVERLAY =================
+-- Hold the switcher or slot-move modifiers on their own and the active
+-- profile's slots are drawn on screen with what each key does.
+--   delay  seconds to hold before it appears
+C.overlay = {
+  enabled = true,
+  delay   = 1.0,
 }
 
 -- ================= SLOT MOVE =================
@@ -106,12 +117,16 @@ C.slotMove = {
 --   start               which of them to open on (default: the first)
 --
 -- slots     numbering for slotMove. Optional; `place` decides it otherwise.
+-- screens   screens (from C.screens) this profile needs. On dock/undock and at
+--           load, tessera stays on the current profile if they're all there,
+--           else picks one that fits. Optional; no list fits anywhere.
 -- place     where each app goes when you press the profile's key. Earlier
 --           entries claim their window first, which matters when an app appears
 --           twice. useSwitcherWindow reuses the window the switcher tracks.
 C.profiles = {
   dev = {
     key = "L",
+    screens = { "external" },
     switcher = {
       anchor = "editor", anchorSlot = "topLeft",
       otherSlot = "topRight", fullSlot = "full",
@@ -129,6 +144,7 @@ C.profiles = {
   -- Same apps, but the external screen is two full-height halves.
   split = {
     key = "K",
+    screens = { "external" },
     switcher = {
       anchor = "editor", anchorSlot = "leftHalf",
       otherSlot = "rightHalf", fullSlot = "full",
@@ -144,7 +160,7 @@ C.profiles = {
   },
 }
 
--- Which profile is live at startup, before you press anything.
+-- The profile on first run. After that, load picks up the last one used.
 C.defaultProfile = "dev"
 
 -- Load places that profile's windows without taking focus. Set false to only

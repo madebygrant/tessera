@@ -357,6 +357,25 @@ M.appWatcher:start()
 -- than sitting blank until the next switch.
 M.pushToBar = function() pushToBar() end
 
+-- Read by the overlay and the picker; copies, so they can't mutate live state.
+M.state = function()
+  local apps = {}
+  for i, ref in ipairs(sw and sw.apps or {}) do apps[i] = ref end
+  return {
+    profile = core.profile(),
+    anchor = sw and sw.anchor,
+    anchorSlot = sw and sw.anchorSlot,
+    otherSlot = sw and sw.otherSlot,
+    apps = apps,
+    index = currentIndex,
+    maximized = maximized,
+  }
+end
+
+M.switchTo = function(i) if i >= 1 and i <= #workspace then switchWorkspace(i) end end
+M.cycle = function(step) switchWorkspace(currentIndex + step) end
+M.toggleMaximize = toggleMaximize
+
 -- For `hs -c 'print(require("tessera").status())'` when the keys go quiet.
 M.status = function()
   local lines = {
@@ -379,7 +398,7 @@ end
 
 -- Record the starting profile before subscribing, so pressing its own hotkey
 -- later is a no-op broadcast rather than a pointless retarget.
-core.setProfile(config.defaultProfile)
+core.setProfile(config.startProfile)
 core.onProfile(function(name) useProfile(name, false) end)
 
 -- window-layout stacks every cycled app in the same slot without raising any,
@@ -392,6 +411,6 @@ core.onApplied(function()
   pushToBar(false)
 end)
 
-useProfile(config.defaultProfile, true)
+useProfile(config.startProfile, true)
 
 return M

@@ -41,11 +41,18 @@ schema.attach(config)
 -- picked even when it was the in-repo one.
 package.loaded["tessera-config"] = config
 
+-- The last profile used, if the connected screens still suit it.
+config.startProfile = config.bestProfile(hs.settings.get("tessera.profile"))
+
 local workspace = require("tessera.layout-workspace") -- half-screen app switcher
 require("tessera.window-layout")    -- full-desktop layout profiles
 if schema.enabled(config, "slotMove") then
   require("tessera.slot-move")      -- focused window -> a slot of the active profile
 end
+if schema.enabled(config, "overlay") then
+  require("tessera.overlay")        -- hold a key layer to see what it does
+end
+local picker = require("tessera.picker") -- fuzzy profile/app chooser
 
 -- Accessibility can vanish across a reboot; without it the keys just look dead.
 local axWarned = false
@@ -60,9 +67,19 @@ end
 checkAccessibility()
 config.axTimer = hs.timer.doEvery(60, checkAccessibility)
 
--- hs -c 'print(require("tessera").status())'
+-- Entry points for `hs -c`, which the Sketchybar item calls on click and scroll.
 config.status = workspace.status
+config.picker = picker.show
 
-print("tessera: started, profile " .. config.defaultProfile)
+-- A trackpad scroll arrives as a burst of events; one step per 0.4s.
+local lastScroll = 0
+config.cycle = function(step)
+  local now = hs.timer.secondsSinceEpoch()
+  if now - lastScroll < 0.4 then return end
+  lastScroll = now
+  workspace.cycle(step)
+end
+
+print("tessera: started, profile " .. config.startProfile)
 
 return config

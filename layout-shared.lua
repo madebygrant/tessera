@@ -6,17 +6,21 @@
 
 local core = {}
 
+-- The connected screen whose name contains `spec`, or nil.
+function core.findScreen(spec)
+  if not spec then return nil end
+  for _, s in ipairs(hs.screen.allScreens()) do
+    local name = s:name()
+    if name and name:find(spec, 1, true) then return s end
+  end
+  return nil
+end
+
 -- Falls back to the primary screen, so an unplugged monitor degrades instead
 -- of erroring.
 function core.resolveScreen(spec)
   if type(spec) == "function" then return spec() end
-  if spec then
-    for _, s in ipairs(hs.screen.allScreens()) do
-      local name = s:name()
-      if name and name:find(spec, 1, true) then return s end
-    end
-  end
-  return hs.screen.primaryScreen()
+  return core.findScreen(spec) or hs.screen.primaryScreen()
 end
 
 -- A frame from fractions (0..1) of a screen's usable area.
@@ -64,6 +68,12 @@ function core.setFrameClamped(win, target)
   clampInto(win)
   hs.timer.doAfter(0.15, function() clampInto(win) end)
   hs.timer.doAfter(0.4, function() clampInto(win) end)
+end
+
+-- A config ref for display: heliumDev -> Helium Dev.
+function core.prettyName(ref)
+  local s = tostring(ref):gsub("([%l%d])(%u)", "%1 %2")
+  return (s:gsub("^%l", string.upper))
 end
 
 -- Empty suffix matches anything.
@@ -274,6 +284,8 @@ end
 function core.setProfile(name)
   if name == activeProfile then return end
   activeProfile = name
+  -- Read back at load, so a reload or reboot lands on the same layout.
+  hs.settings.set("tessera.profile", name)
   for _, fn in ipairs(profileHandlers) do fn(name) end
 end
 

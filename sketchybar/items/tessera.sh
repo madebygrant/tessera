@@ -2,11 +2,12 @@
 
 sketchybar --add event tessera_switcher \
            --add item tessera left \
-           --set tessera icon="" \
+           --set tessera icon="" \
                          label="—" \
                          label.padding_right=12 \
                          script="$PLUGIN_DIR/tessera.sh" \
-           --subscribe tessera tessera_switcher front_app_switched
+           --subscribe tessera tessera_switcher front_app_switched \
+                               mouse.clicked mouse.scrolled
 
 # The bar restarts independently of Hammerspoon, so ask it for current state.
 # Subshell because this file is sourced; launchd's PATH may not carry hs.

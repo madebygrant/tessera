@@ -62,7 +62,7 @@ for i = 1, maxSlots() do
   hs.hotkey.bind(config.keys.slotMove, tostring(i), function() moveTo(i) end)
 end
 
-slots = slotsFor(config.defaultProfile)
+slots = slotsFor(config.startProfile)
 core.onProfile(function(name) slots = slotsFor(name) end)
 
 M.slots = function() return copy(slots) end

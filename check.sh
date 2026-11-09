@@ -14,7 +14,7 @@ local function report(name, ok, err)
 end
 for _, f in ipairs({ "init.lua", "layout-shared.lua", "layout-workspace.lua",
                      "schema.lua", "slot-move.lua", "window-layout.lua",
-                     "tessera-config.example.lua" }) do
+                     "overlay.lua", "picker.lua", "tessera-config.example.lua" }) do
   local fn, err = loadfile(root .. f)
   report(f, fn ~= nil, err)
 end
