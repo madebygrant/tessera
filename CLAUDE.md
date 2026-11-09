@@ -81,7 +81,9 @@ menu-bar Hammerspoon → Reload Config (or `hs.reload()`).
   and resets to, so "first app" and "key 1" can differ. Number keys are
   bound for the WIDEST `apps` list across all profiles; a key past the active
   profile's count is a no-op. `C.defaultProfile` is what the switcher targets at
-  load, before any profile hotkey is pressed. Its keys are `ctrl+alt`, kept
+  load, before any profile hotkey is pressed. Load places it WITHOUT focus, so
+  a reload doesn't steal focus; `C.launchAtLoad = false` also stops load
+  opening apps that aren't running. Its keys are `ctrl+alt`, kept
   clear of `alt+cmd` — those arrows are tab-switch in most browsers and
   terminals, and Hammerspoon grabs the event first, so binding there breaks them
   silently.
