@@ -1,8 +1,9 @@
 # tessera
 
-Config-driven window management for [Hammerspoon](https://www.hammerspoon.org/). A
-half-screen app switcher plus named full-desktop layout profiles, both placing
-windows into geometry-based "slots".
+Window layouts for [Hammerspoon](https://www.hammerspoon.org/), driven by one
+config file. A switcher keeps an anchor app on one half of the screen and cycles
+other apps through the other half. Profiles place every app at once on one key.
+Both put windows into "slots", rectangles measured in fractions of a screen.
 
 ## Install
 
@@ -12,141 +13,152 @@ Clone into your Hammerspoon config directory:
 git clone git@github.com:madebygrant/tessera.git ~/.hammerspoon/tessera
 ```
 
-Create your local config from the template — either outside the repo (preferred,
-survives re-cloning) or inside it:
+Copy the template. Outside the repo is better, because it survives a re-clone:
 
 ```sh
-# outside, beside your init.lua
+# beside your init.lua
 cp ~/.hammerspoon/tessera/tessera-config.example.lua ~/.hammerspoon/tessera-config.lua
 
 # or inside the repo (gitignored)
 cp ~/.hammerspoon/tessera/tessera-config.example.lua ~/.hammerspoon/tessera/config.lua
 ```
 
-Edit it for your machine: screen names, apps, slots, keys, profiles. It's data
-only, so there's no code in there to keep in sync. Either location stays out of
-version control, and tessera loads whichever it finds — the outside one wins if
-both exist, and it says so on load.
+Edit it for your machine: screen names, apps, slots, keys and profiles. It's
+plain data with no code in it. If both files exist, tessera uses the one outside
+the repo and prints which it picked.
 
-Then load it from `~/.hammerspoon/init.lua`:
+Load it from `~/.hammerspoon/init.lua`:
 
 ```lua
 require("tessera")
 ```
 
-Reload Hammerspoon (menu bar → Reload Config, or `hs.reload()`).
+Then reload Hammerspoon from the menu bar, or run `hs.reload()`. After any edit,
+`./check.sh` loads every file and validates your config inside the running
+Hammerspoon.
+
+Hammerspoon needs Accessibility permission, and it can drop across a reboot.
+tessera alerts once when it's missing, and every key does nothing until it's
+back. The toggle in System Settings can show on while the permission is stale.
+In that case run `tccutil reset Accessibility org.hammerspoon.Hammerspoon`,
+grant the prompt, then quit and reopen Hammerspoon. A reload isn't enough.
 
 ## Concepts
 
-- **Slots** are fractions of a screen, not pixels: `{ screen, x, y, w, h }` in
-  `0..1` of that screen's frame. Resolution-independent; a missing monitor falls
-  back to the primary screen.
-- **Profiles** are named full-desktop layouts, each bound to its own hotkey.
-- **Switcher** pins an anchor app to half the screen and cycles other apps
-  through the remaining half via `keys.switcher`+`1..N` / `Left`/`Right`. Its hotkeys
-  are global, but its targets belong to the active profile — pressing a
-  profile's hotkey retargets the switcher along with the layout. A profile's
-  `start` picks which app it opens on without changing the number-key order.
-- **Slot move** (optional) sends whatever window has focus to the Nth slot of
-  the active profile, so apps tessera knows nothing about still land somewhere
-  sane.
-- **Keys** are declared together in `config.keys`, one layer per feature, so a
-  clash is visible before you hit it.
-- **screenInsets** carve pixels off a screen before slots compute (e.g. clearing
-  a Sketchybar overlay macOS doesn't report).
-- **gap** shrinks every slot edge by N px so neighbours sit apart.
-- **Sketchybar readout** (optional) shows the active profile and app in a
-  [SketchyBar](https://github.com/FelixKratz/SketchyBar) item. Scroll on it to
-  cycle apps.
-- **Overlay** (optional): hold the switcher or slot-move modifiers on their own
-  and the active profile's slots appear on screen, labelled with their keys.
-- **Profiles remember and follow screens.** Load resumes the last profile used.
-  A profile's optional `screens` list names the monitors it needs; on dock or
-  undock tessera keeps the current profile if it still fits, else switches to
-  one that does.
+- **Slots** are `{ screen, x, y, w, h }` in fractions (0 to 1) of a screen, so
+  they survive a resolution change. A slot on a missing monitor lands on the
+  primary screen.
+- **Profiles** are full-desktop layouts, each on its own hotkey. Applying one
+  moves every app it names into its slot and launches any that aren't running.
+- **The switcher** belongs to the active profile. Its keys bind once, and a
+  profile hotkey changes what they drive. A profile's `start` picks the app it
+  opens on without changing the number-key order.
+- **Profiles remember screens.** tessera saves the last profile per screen setup
+  and restores it at load. A profile can list the `screens` it needs, and on
+  dock or undock tessera returns to the last profile you used with those
+  screens. With nothing saved, it picks a fitting profile that needs the most
+  screens, so a docked layout beats a laptop one while the monitor is in.
+- **Slot move** (optional) sends the focused window to a slot of the active
+  profile, for apps tessera doesn't know about.
+- **The overlay** (optional) draws the active profile's slots and their keys on
+  screen while you hold the switcher or slot-move modifiers on their own.
+- **screenInsets** take pixels off a screen edge before tessera computes slots,
+  for overlays macOS doesn't report, like SketchyBar.
+- **gap** takes N px off every slot edge, so neighbours end up 2N apart.
 
 ## Hotkeys
 
-All four layers are declared together in `config.keys`, since the way they break
-is by colliding with each other or with an app. The switcher layer is bound once
-and never rebinds; only what it targets changes with the active profile.
+Every key layer lives in `config.keys`, because they break by colliding with
+each other or with an app.
 
 | Keys | Action |
 | --- | --- |
-| `ctrl+alt`+`1..N` | Jump to the Nth app of the active profile |
+| `ctrl+alt`+`1..N` | Switch to the Nth app of the active profile |
 | `ctrl+alt`+`Left`/`Right` | Cycle through them |
-| `ctrl+alt`+`F` | Toggle the current app full-screen |
-| `ctrl+alt+cmd`+profile key | Apply that profile's layout |
-| `ctrl+alt+shift`+`1..N` | Send the focused window to the Nth slot (optional) |
+| `ctrl+alt`+`F` | Toggle the current app between its half and the full screen |
+| hold `ctrl+alt` | Show the switcher overlay |
+| `ctrl+alt+cmd`+profile key | Apply that profile |
+| `ctrl+alt+shift`+`1..N` | Send the focused window to the Nth slot |
+| hold `ctrl+alt+shift` | Show the slot-move overlay |
 
-Number keys are bound for the widest `apps` list across all profiles, so a key
-past the active profile's count does nothing rather than wrapping.
+Number keys bind for the longest `apps` list across all profiles. A key past the
+active profile's count does nothing.
 
-`ctrl+alt` deliberately avoids `alt+cmd`, where the arrows are tab-switch in
-most browsers and terminals. Hammerspoon wins that fight and would break them
-with no error. The trade-off is VoiceOver, which claims `ctrl+alt` as its own
-modifier: while it is on, the switcher keys silently do nothing.
+The switcher uses `ctrl+alt` to stay off `alt+cmd`, whose arrows switch tabs in
+most browsers and terminals. Hammerspoon gets those keys first and would break
+them with no error. The cost is VoiceOver, which also uses `ctrl+alt`. While
+VoiceOver is on, the switcher keys do nothing.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `init.lua` | Package entry point (`require("tessera")`). Loads the feature modules. |
-| `tessera-config.example.lua` | Template config — copy to one of the two config locations. |
-| `../tessera-config.lua` *or* `config.lua` | Your local config — screens, slots, insets, gap, apps, keys, profiles. |
-| `layout-shared.lua` | Pure engine: geometry resolution, frame clamp, window registry. |
-| `schema.lua` | Config accessors and the feature-flag rule, attached at load. |
-| `layout-workspace.lua` | The half-screen app switcher. |
-| `window-layout.lua` | Applies a profile on its hotkey. |
-| `slot-move.lua` | Optional: sends the focused window to a slot of the active profile. |
-| `sketchybar/` | Optional bar item and plugin, to copy into your SketchyBar config. |
+| `init.lua` | Entry point (`require("tessera")`). Loads the config and the feature modules. |
+| `tessera-config.example.lua` | The template config. |
+| `../tessera-config.lua` *or* `config.lua` | Your config: screens, slots, insets, gap, apps, keys, profiles. |
+| `schema.lua` | Config accessors, load-time validation, profile choice, the feature-flag rule. |
+| `layout-shared.lua` | Geometry, the frame clamp, app and window lookup, the window registry. |
+| `layout-workspace.lua` | The switcher. |
+| `window-layout.lua` | Applies a profile, and re-applies on dock or undock. |
+| `slot-move.lua` | Optional. Sends the focused window to a slot. |
+| `overlay.lua` | Optional. The hold-to-show slot overlay. |
+| `sketchybar/` | Optional bar item and plugin for your SketchyBar config. |
+| `check.sh` | Loads every file and validates each config present. |
 
 ## Configuration
 
-Everything lives in your config file (copied from
-`tessera-config.example.lua` — see Install for the two locations).
+Everything goes in your config file.
 
-- **New app** — add to `config.apps` (`{ app=, titleSuffix?, profileDir?, launch? }`).
-- **New slot** — add to `config.slots` (fractions of a screen).
-- **Keys** — `config.keys` holds all four layers (`switcher`, `slotMove`,
-  `profile`, `maximize`) and is required; tessera says so at load if it's
-  missing. A profile can carry its own `modifier` to sit off the shared one.
-- **New profile** — add to `config.profiles` with a `key`; it auto-binds on
-  `config.keys.profile`. `place` order matters, since earlier entries reserve
-  their window first. Each profile also needs a `switcher` block (`anchor`,
-  `anchorSlot`, `otherSlot`, `fullSlot`, `apps`, optional `start`) saying what
-  the switcher hotkeys drive while that profile is active. An optional `slots`
-  list fixes the slot-move key order. `config.defaultProfile` picks the one used
-  at load.
+- **New app.** Add it to `config.apps` (`{ app=, titleSuffix?, profileDir?, launch? }`).
+- **New slot.** Add it to `config.slots`, in fractions of a screen.
+- **Keys.** `config.keys` needs `switcher`, `slotMove`, `profile` and
+  `maximize`, and tessera errors at load if one is missing. A profile can set its
+  own `modifier`.
+- **New profile.** Add it to `config.profiles` with a `key`. Order in `place`
+  matters, because earlier entries claim their window first. Each profile needs
+  a `switcher` block (`anchor`, `anchorSlot`, `otherSlot`, `fullSlot`, `apps`,
+  optional `start`). `slots` fixes slot-move's key order and `screens` names the
+  monitors it needs; both are optional. `config.defaultProfile` is the one used
+  on first run.
+- **launchAtLoad.** Set it to `false` to stop a reload opening apps that aren't
+  running. Load never takes focus either way.
 
-Optional features follow one rule: the config block has to be present, and
-`enabled = false` inside it turns the feature off. No block means off, so your
-config file lists everything that runs.
+tessera checks every profile at load, so a typo in an app or slot name fails on
+reload rather than on a keypress.
 
-- **Slot move** — `config.slotMove` binds `keys.slotMove`+`1..N` to the active
-  profile's slots. Key order is that profile's optional `slots` list, and
-  otherwise the slots its `place` entries name, first appearance winning. Pin it
-  explicitly if reordering `place` shouldn't move your keys around. Keys bind
-  for the longest list across all profiles, so a key past the active profile's
-  count does nothing.
-- **Sketchybar** — `config.sketchybar` turns on the bar readout. See below.
+Optional features follow one rule. The config block has to exist, and
+`enabled = false` inside it turns the feature off. No block means off.
 
-Screen names are machine-specific. On a new machine, list them with:
+- **slotMove** binds `keys.slotMove`+`1..N`. Key order is the profile's `slots`
+  list, else the slots its `place` entries name, in order. Set `slots` if
+  reordering `place` shouldn't move your keys.
+- **overlay** takes `delay`, the seconds to hold before it shows (default 1).
+- **sketchybar** turns on the bar readout, below.
+
+Screen names differ per machine. List yours with:
 
 ```sh
 hs -c 'for _,s in ipairs(hs.screen.allScreens()) do print(s:name()) end'
 ```
 
-and update `config.screens`. Unmatched names fall back to the primary screen.
+and put them in `config.screens`. Names that don't match fall back to the
+primary screen.
+
+When the keys go quiet, `hs -c 'print(require("tessera").status())'` prints the
+active profile, switcher index, Accessibility state, pending launches and the
+window tracked for each app.
 
 ## Sketchybar readout
 
 Optional. tessera fires a [SketchyBar](https://github.com/FelixKratz/SketchyBar)
-event whenever the switcher moves, so a bar item can show where you are:
+event on every switch, so a bar item can show where you are:
 
 ```
- SPLIT 2/2
+NETRUNNER / GHOSTTY
 ```
+
+The app name only shows while you're in the layout's apps. Scrolling on the item
+cycles them.
 
 ```lua
 C.sketchybar = {
@@ -155,12 +167,12 @@ C.sketchybar = {
 }
 ```
 
-`event` must match the `--add event` name in your bar config, and an optional
-`bin` overrides the binary path (unset searches both Homebrew prefixes). A
-machine without sketchybar is a no-op either way.
+`event` must match the `--add event` name in your bar config. `bin` overrides the
+binary path; unset, tessera checks both Homebrew prefixes. Without sketchybar
+installed, nothing happens.
 
-The bar half ships in `sketchybar/`. Copy it into your SketchyBar config, or
-symlink it so repo updates land automatically:
+Copy `sketchybar/` into your SketchyBar config, or symlink it so updates arrive
+with `git pull`:
 
 ```sh
 ln -s ~/.hammerspoon/tessera/sketchybar/items/tessera.sh   ~/.config/sketchybar/items/tessera.sh
@@ -173,8 +185,15 @@ Then source the item from your `sketchybarrc`:
 source "$ITEM_DIR/tessera.sh"
 ```
 
-The label uses white unless you export `TESSERA_LABEL_COLOR` from your own bar
-config. Writing a different item instead is fine; each trigger carries:
+Three variables, exported from your bar config, change how it looks:
+
+| Variable | Effect |
+| --- | --- |
+| `TESSERA_LABEL_COLOR` | Profile colour. White if unset. |
+| `TESSERA_APP_COLOR` | App name colour. Matches the profile if unset. |
+| `TESSERA_HIDE_ITEMS` | Space-separated items to hide once tessera has a profile, like a front-app readout it replaces. |
+
+To write your own item instead, each trigger carries:
 
 | Variable | Value |
 | --- | --- |
@@ -186,6 +205,5 @@ config. Writing a different item instead is fine; each trigger carries:
 | `MAXIMIZED` | Whether it covers the anchor |
 | `FOCUSED` | True when tessera just pulled that app forward |
 
-`FOCUSED` matters if the item hides the slot number outside the layout: a
-profile retarget places nothing, so it must not claim the front app.
-
+`FOCUSED` matters if your item hides the app outside the layout. A profile
+change places nothing, so it must not claim the front app.
