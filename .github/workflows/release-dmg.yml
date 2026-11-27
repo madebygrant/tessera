@@ -1,0 +1,41 @@
+name: Release DMG
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # CI has no signing certificate, so the app is signed ad hoc.
+      - name: Build app
+        run: make app IDENTITY=-
+
+      - name: Stamp version from tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${TAG#v}" build/Tessera.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" build/Tessera.app/Contents/Info.plist
+          codesign --force --sign - build/Tessera.app
+
+      - name: Make DMG
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p build/dmg
+          cp -R build/Tessera.app build/dmg/
+          ln -s /Applications build/dmg/Applications
+          hdiutil create -volname Tessera -srcfolder build/dmg -format UDZO -ov "build/Tessera-${TAG}.dmg"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" "build/Tessera-${TAG}.dmg" --clobber

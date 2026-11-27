@@ -24,10 +24,35 @@ through a second slot.
 ## Requirements
 
 - macOS 15 or later
-- Swift 6 toolchain (Xcode or the Command Line Tools)
 - Accessibility permission, to move windows and read the overlay keys
+- To build from source, a Swift 6 toolchain (Xcode or the Command Line Tools)
 
 ## Install
+
+### From a release
+
+Download `Tessera-<version>.dmg` from
+[Releases](https://github.com/madebygrant/tessera/releases) and drag
+Tessera to Applications. The build is Apple Silicon only.
+
+The app is signed ad hoc and not notarized, so macOS blocks the first launch.
+Right-click Tessera and choose Open, or run:
+
+```sh
+xattr -d com.apple.quarantine /Applications/Tessera.app
+```
+
+Each update has a new ad hoc signature, so macOS drops the Accessibility
+grant. Remove Tessera from System Settings > Privacy & Security >
+Accessibility and grant it again.
+
+To use the CLI, link it onto your `PATH`:
+
+```sh
+ln -sf /Applications/Tessera.app/Contents/MacOS/Tessera ~/bin/tessera
+```
+
+### From source
 
 ```sh
 make install IDENTITY="Your Signing Identity"
@@ -55,6 +80,9 @@ that shows the current app and profile and cycles apps on scroll.
 make test   # run the TesseraCore tests
 make icon   # regenerate Resources/AppIcon.icns
 ```
+
+Publishing a GitHub release runs `.github/workflows/release-dmg.yml`, which
+builds the app and attaches the DMG to the release.
 
 ## License
 
