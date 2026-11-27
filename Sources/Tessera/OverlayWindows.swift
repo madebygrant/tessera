@@ -5,39 +5,49 @@ import TesseraCore
 // on it. Elements arrive in top-left global coordinates, as AX uses.
 @MainActor
 enum OverlayWindows {
-    private static var panels: [NSPanel] = []
-    private static let accent = NSColor(srgbRed: 0x3D / 255, green: 0x7B / 255, blue: 0xF2 / 255, alpha: 1)
+    // One per display, kept between shows: rebuilding windows on every redraw
+    // flickers while you cycle with the overlay up.
+    private static var panels: [UInt32: NSPanel] = [:]
+    // The Triad gold. Text on it is dark: white on gold is too faint to read.
+    private static let accent = NSColor(srgbRed: 0xE3 / 255, green: 0xA8 / 255, blue: 0x3B / 255, alpha: 1)
+    private static let onAccent = NSColor(srgbRed: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255, alpha: 1)
     private static let muted = NSColor(srgbRed: 0xA9 / 255, green: 0xB1 / 255, blue: 0xBF / 255, alpha: 1)
     private static let soft = NSColor(srgbRed: 0xC3 / 255, green: 0xC9 / 255, blue: 0xD4 / 255, alpha: 1)
     private static let cardFill = NSColor(srgbRed: 20 / 255, green: 25 / 255, blue: 35 / 255, alpha: 0.62)
 
     static func hide() {
-        for p in panels { p.orderOut(nil) }
-        panels = []
+        for p in panels.values { p.orderOut(nil) }
     }
 
     static func show(_ elements: [OverlayElement]) {
-        hide()
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        var shown: Set<UInt32> = []
         for screen in NSScreen.screens {
             let f = screen.frame
             let axFrame = CGRect(x: f.minX, y: primaryHeight - f.maxY, width: f.width, height: f.height)
             let mine = elements.filter { owner(of: $0, screens: NSScreen.screens, primaryHeight: primaryHeight) == screen }
             guard !mine.isEmpty else { continue }
-            let root = content(mine, size: f.size, origin: axFrame.origin)
-            let panel = NSPanel(contentRect: f, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = false
-            panel.ignoresMouseEvents = true
-            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-            panel.isReleasedWhenClosed = false
-            panel.contentView = root
-            panel.setFrame(f, display: false)
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+            let panel = panels[id] ?? makePanel()
+            panels[id] = panel
+            panel.contentView = content(mine, size: f.size, origin: axFrame.origin)
+            panel.setFrame(f, display: true)
             panel.orderFrontRegardless()
-            panels.append(panel)
+            shown.insert(id)
         }
+        for (id, panel) in panels where !shown.contains(id) { panel.orderOut(nil) }
+    }
+
+    private static func makePanel() -> NSPanel {
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.isReleasedWhenClosed = false
+        return panel
     }
 
     private static func content(_ elements: [OverlayElement], size: CGSize, origin: CGPoint) -> NSView {
@@ -48,6 +58,7 @@ enum OverlayWindows {
         return root
     }
 
+    #if DEBUG
     // For `Tessera --snapshot-overlay`: draws elements for a screen of `size`
     // at the origin into a PNG, without showing anything.
     static func snapshot(_ elements: [OverlayElement], size: CGSize) -> Data? {
@@ -59,6 +70,7 @@ enum OverlayWindows {
         root.cacheDisplay(in: root.bounds, to: rep)
         return rep.representation(using: .png, properties: [:])
     }
+    #endif
 
     private static func rect(of element: OverlayElement) -> CGRect {
         switch element {
@@ -117,7 +129,8 @@ enum OverlayWindows {
 
         case let .profiles(screen, chips, shared):
             var parts: [NSView] = chips.map { chip in
-                let row = stack([keycap(chip.key, k: k), label(chip.name, 14 * k, chip.active ? .semibold : .regular, chip.active ? .white : soft)],
+                let row = stack([keycap(chip.key, k: k, onFill: chip.active),
+                                 label(chip.name, 14 * k, chip.active ? .semibold : .regular, chip.active ? onAccent : soft, truncates: true)],
                                 spacing: 8 * k, orientation: .horizontal)
                 return pad(row, h: 14 * k, height: 40 * k, fill: chip.active ? accent : nil, radius: 11 * k)
             }
@@ -141,7 +154,8 @@ enum OverlayWindows {
             frame.layer?.cornerRadius = 12
             frame.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
             root.addSubview(frame)
-            let tag = pad(label("Focused: \(app)", 13 * k, .semibold, .white), h: 10 * k, height: 26 * k, fill: accent, radius: 13 * k)
+            let tag = pad(label("Focused: \(app)", 13 * k, .semibold, onAccent, truncates: true), h: 10 * k, height: 26 * k, fill: accent, radius: 13 * k)
+            tag.widthAnchor.constraint(lessThanOrEqualToConstant: max(60, local.width - 24)).isActive = true
             frame.addSubview(tag)
             NSLayoutConstraint.activate([
                 tag.leadingAnchor.constraint(equalTo: frame.leadingAnchor, constant: 12),
@@ -149,7 +163,7 @@ enum OverlayWindows {
             ])
 
         case let .slotHint(screen, modifiers, app):
-            let what = label(app.map { "\($0)'s window" } ?? "the focused window", 14 * k, .semibold, .white)
+            let what = label(app.map { "\($0)'s window" } ?? "the focused window", 14 * k, .semibold, .white, truncates: true)
             let line = stack([keycap(modifiers, k: k), label("+ a number sends", 14 * k, .regular, soft), what,
                               label("to that slot", 14 * k, .regular, soft)], spacing: 8 * k, orientation: .horizontal)
             bottomPill(pad(line, h: 10 * k, height: 40 * k), in: root, area: screen.offsetBy(dx: -origin.x, dy: -origin.y), k: k)
@@ -159,10 +173,10 @@ enum OverlayWindows {
     private static func appRow(_ row: OverlayElement.AppRow, width: CGFloat, k: CGFloat) -> NSView {
         let showing = row.state == .showing
         let keys = stack(row.keys.map { keycap($0, k: k) }, spacing: 4 * k, orientation: .horizontal)
-        let name = label(row.name, 22 * k, showing ? .semibold : .medium, .white)
+        let name = label(row.name, 22 * k, showing ? .semibold : .medium, .white, truncates: true)
         var parts: [NSView] = [keys, name, NSView()]
         switch row.state {
-        case .showing: parts.append(pad(label("Showing", 12 * k, .semibold, .white), h: 8 * k, height: 22 * k, fill: accent, radius: 11 * k))
+        case .showing: parts.append(pad(label("Showing", 12 * k, .semibold, onAccent), h: 8 * k, height: 22 * k, fill: accent, radius: 11 * k))
         case .notRunning: parts.append(label("opens on switch", 12 * k, .regular, muted))
         case .ready: break
         }
@@ -201,17 +215,25 @@ enum OverlayWindows {
         return view
     }
 
-    private static func label(_ text: String, _ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor, kern: CGFloat = 0) -> NSTextField {
+    // `truncates`: names that can be long give way first when space runs out,
+    // instead of Auto Layout breaking a constraint of its choosing.
+    private static func label(_ text: String, _ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor,
+                              kern: CGFloat = 0, truncates: Bool = false) -> NSTextField {
         let field = NSTextField(labelWithAttributedString: NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color, .kern: kern,
         ]))
         field.translatesAutoresizingMaskIntoConstraints = false
+        if truncates {
+            field.lineBreakMode = .byTruncatingTail
+            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         return field
     }
 
-    private static func keycap(_ text: String, k: CGFloat) -> NSView {
-        let cap = pad(label(text, 13 * k, .semibold, .white), h: 6 * k, height: 24 * k, fill: NSColor(white: 1, alpha: 0.12), radius: 6 * k)
-        cap.layer?.borderColor = NSColor(white: 1, alpha: 0.2).cgColor
+    private static func keycap(_ text: String, k: CGFloat, onFill: Bool = false) -> NSView {
+        let ink = onFill ? onAccent : NSColor.white
+        let cap = pad(label(text, 13 * k, .semibold, ink), h: 6 * k, height: 24 * k, fill: ink.withAlphaComponent(0.12), radius: 6 * k)
+        cap.layer?.borderColor = ink.withAlphaComponent(0.2).cgColor
         cap.layer?.borderWidth = 1
         cap.widthAnchor.constraint(greaterThanOrEqualToConstant: 24 * k).isActive = true
         return cap
@@ -287,6 +309,7 @@ enum OverlayWindows {
             content.topAnchor.constraint(equalTo: pill.topAnchor, constant: 6 * k),
             content.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -6 * k),
             pill.centerXAnchor.constraint(equalTo: root.leadingAnchor, constant: area.midX),
+            pill.widthAnchor.constraint(lessThanOrEqualToConstant: area.width - 32),
             pill.bottomAnchor.constraint(equalTo: root.topAnchor, constant: area.maxY - 36 * k),
         ])
     }

@@ -76,6 +76,9 @@ public protocol Platform: AnyObject {
     func focusedWindow(pid: Int32) -> WindowInfo?
     // The window with keyboard focus, whichever app owns it.
     func frontmostWindow() -> WindowInfo?
+    // The front app's topmost window, from CoreGraphics: no Accessibility call,
+    // so a hung app can't stall the overlay that asks.
+    func frontmostWindowSummary() -> (frame: CGRect, app: String)?
     // Native full screen: the window owns its own Space and won't take a frame.
     func isFullScreen(_ ref: WinID) -> Bool
     func window(_ ref: WinID) -> WindowInfo?

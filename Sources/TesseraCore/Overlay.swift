@@ -200,10 +200,9 @@ final class Overlay {
         var out = scrims
         out += order.enumerated().map { i, slot in .slot(engine.frame(ofSlot: slot), key: "\(i + 1)", name: prettyName(slot)) }
 
-        let front = engine.platform.frontmostWindow()
-        let target = front.flatMap { $0.isStandard && !engine.platform.isFullScreen($0.ref) ? $0 : nil }
-        let appName = target.flatMap { w in engine.platform.processName(pid: w.ref.pid) }
-        if let target, let appName { out.append(.focused(target.frame, app: appName)) }
+        let front = engine.platform.frontmostWindowSummary()
+        let appName = front?.app
+        if let front { out.append(.focused(front.frame, app: front.app)) }
         if let screen = engine.usableScreen(ofSlot: order[0]) {
             out.append(.slotHint(screen, modifiers: mods, app: appName))
         }

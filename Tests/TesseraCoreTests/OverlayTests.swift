@@ -201,6 +201,27 @@ struct OverlayTests {
         #expect(s.platform.overlay == nil)
     }
 
+    @Test func holdingTheKeysDuringAPreviewHandsOverToTheHold() throws {
+        let (s, engine) = try scene()
+        engine.previewOverlay()
+        hold(s, engine, switcherMods)
+        // The preview gives way at once; the hold shows after its own delay.
+        #expect(s.platform.overlay == nil)
+        s.clock.advance(1)
+        #expect(!rows(try shown(s)).isEmpty)
+        s.clock.advance(5)
+        #expect(s.platform.overlay != nil)
+    }
+
+    @Test func anyModifierChangeDismissesAPreview() throws {
+        let (s, engine) = try scene()
+        engine.previewOverlay()
+        hold(s, engine, [.cmd])
+        #expect(s.platform.overlay == nil)
+        s.clock.advance(5)
+        #expect(s.platform.overlay == nil)
+    }
+
     @Test func prettyNamesSplitCamelCase() {
         #expect(prettyName("heliumDev") == "Helium Dev")
         #expect(prettyName("mainMax") == "Main Max")

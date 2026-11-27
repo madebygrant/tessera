@@ -5,7 +5,8 @@ import os
 let log = Logger(subsystem: "local.tessera", category: "app")
 
 // Errors stack under the menu bar icon, each with a way out, and go after 10s
-// or on Dismiss. Clicks land without taking focus from the app in front.
+// (held while the pointer is on one) or on Dismiss. Clicks land without taking
+// focus from the app in front.
 @MainActor
 enum Toasts {
     // The status item's frame on screen; toasts hang below it.
@@ -19,13 +20,16 @@ enum Toasts {
         let panel = makePanel(notice)
         panels.insert(panel, at: 0)
         while panels.count > maxShown { close(panels.removeLast()) }
-        layout()
+        layout(animated: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { $0.duration = 0.18; panel.animator().alphaValue = 1 }
-        Task { @MainActor in
+        Task { @MainActor [weak panel] in
             try? await Task.sleep(for: .seconds(seconds))
-            dismiss(panel)
+            while let card = panel?.contentView as? ToastCard, card.hovered {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            if let panel { dismiss(panel) }
         }
     }
 
@@ -35,23 +39,39 @@ enum Toasts {
         NSAnimationContext.runAnimationGroup({ $0.duration = 0.18; panel.animator().alphaValue = 0 }, completionHandler: {
             MainActor.assumeIsolated { close(panel) }
         })
-        layout()
+        layout(animated: true)
     }
 
     private static func close(_ panel: NSPanel) { panel.orderOut(nil) }
 
-    private static func layout() {
+    // Newest on top. Any that would run off the bottom of the screen go.
+    private static func layout(animated: Bool) {
         let anchorFrame = anchor?()
         let screen = NSScreen.screens.first { s in anchorFrame.map { s.frame.contains(NSPoint(x: $0.midX, y: $0.midY)) } ?? false }
             ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
         let right = anchorFrame.map { min($0.midX + width / 2, visible.maxX - 10) } ?? visible.maxX - 10
         var top = visible.maxY - 8
+        var kept: [NSPanel] = []
         for panel in panels {
             let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: max(visible.minX + 10, right - width), y: top - size.height))
+            guard top - size.height >= visible.minY || kept.isEmpty else {
+                close(panel)
+                continue
+            }
+            let origin = NSPoint(x: max(visible.minX + 10, right - width), y: top - size.height)
+            if animated {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.2
+                    panel.animator().setFrameOrigin(origin)
+                }
+            } else {
+                panel.setFrameOrigin(origin)
+            }
+            kept.append(panel)
             top -= size.height + 10
         }
+        panels = kept
     }
 
     private static func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor, mono: Bool = false) -> NSTextField {
@@ -75,7 +95,7 @@ enum Toasts {
         panel.isReleasedWhenClosed = false
         panel.appearance = NSAppearance(named: .darkAqua)
 
-        let card = NSVisualEffectView()
+        let card = ToastCard()
         card.material = .hudWindow
         card.blendingMode = .behindWindow
         card.state = .active
@@ -111,9 +131,15 @@ enum Toasts {
         buttons.spacing = 8
         if let action = notice.action {
             let title = action == .openConfig ? "Open Config" : "Open System Settings"
-            buttons.addArrangedSubview(ToastButton(title: title) { perform(action); dismiss(panel) })
+            // Weak: the panel owns the button, so a strong capture would leak both.
+            buttons.addArrangedSubview(ToastButton(title: title) { [weak panel] in
+                perform(action)
+                if let panel { dismiss(panel) }
+            })
         }
-        buttons.addArrangedSubview(ToastButton(title: "Dismiss") { dismiss(panel) })
+        buttons.addArrangedSubview(ToastButton(title: "Dismiss") { [weak panel] in
+            if let panel { dismiss(panel) }
+        })
         if let last = text.arrangedSubviews.last { text.setCustomSpacing(10, after: last) }
         text.addArrangedSubview(buttons)
 
@@ -146,6 +172,20 @@ enum Toasts {
             }
         }
     }
+}
+
+private final class ToastCard: NSVisualEffectView {
+    private(set) var hovered = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        // activeAlways: Tessera is never the active app.
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseExited(with event: NSEvent) { hovered = false }
 }
 
 private final class ToastButton: NSButton {

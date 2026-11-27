@@ -7,6 +7,9 @@ final class Hotkeys {
     private static var handlers: [UInt32: @MainActor () -> Void] = [:]
     private static var nextID: UInt32 = 1
     private static var installed = false
+    // While Tessera's own menu is open its items handle the same chords, and
+    // both firing would toggle Fill the Screen on and straight back off.
+    static var paused = false
     private var registered: [(ref: EventHotKeyRef, id: UInt32)] = []
 
     init() { Self.installHandler() }
@@ -79,7 +82,9 @@ final class Hotkeys {
                 nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID
             )
             let id = hotKeyID.id
-            MainActor.assumeIsolated { Hotkeys.handlers[id]?() }
+            MainActor.assumeIsolated {
+                if !Hotkeys.paused { Hotkeys.handlers[id]?() }
+            }
             return noErr
         }, 1, &spec, nil, nil)
     }

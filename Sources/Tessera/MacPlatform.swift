@@ -149,6 +149,21 @@ final class MacPlatform: Platform {
         return NSWorkspace.shared.frontmostApplication.flatMap { focusedWindow(pid: $0.processIdentifier) }
     }
 
+    func frontmostWindowSummary() -> (frame: CGRect, app: String)? {
+        guard let app = NSWorkspace.shared.frontmostApplication, let name = app.localizedName else { return nil }
+        let pid = app.processIdentifier
+        // On-screen windows come front to back, so the first match is the topmost.
+        let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+        for info in list {
+            guard (info[kCGWindowOwnerPID as String] as? pid_t) == pid,
+                  (info[kCGWindowLayer as String] as? Int) == 0,
+                  let b = bounds(info), b.width >= 100, b.height >= 100
+            else { continue }
+            return (b, name)
+        }
+        return nil
+    }
+
     func isFullScreen(_ ref: WinID) -> Bool {
         element(ref).flatMap { axCopy($0, "AXFullScreen") as? Bool } ?? false
     }

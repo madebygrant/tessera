@@ -28,7 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         control.handler = { [weak self] command, payload in self?.handle(command, payload) ?? "" }
         control.start()
         // Prompts once; macOS remembers the grant per signing identity.
-        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        let trusted = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        statusItem.button?.image = StatusIcon.make(attention: !trusted)
         Toasts.anchor = { [weak self] in self?.statusItem.button?.window?.frame }
         ProfileImport.run()
         let watcher = ConfigWatcher(url: ConfigFile.url)
@@ -171,8 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = StatusIcon.make(attention: !trusted)
         if !trusted { addAccessibilityWarning(to: menu) }
 
-        if let engine {
-            let state = engine.menuState
+        let state = engine?.menuState
+        if let engine, let state {
             let header = add(menu, bold(state.profileName ?? "No profile"), chord: state.profileChord, enabled: false)
             header.toolTip = "The active profile"
             if !state.screens.isEmpty {
@@ -226,8 +227,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, plain("Edit Config…"), action: #selector(openConfig), chord: .init(modifiers: [.cmd], key: ","))
         add(menu, plain("Reload Config"), action: #selector(reload), chord: .init(modifiers: [.cmd], key: "r"))
         menu.addItem(.separator())
-        if let engine, trusted {
-            let overlay = engine.menuState.overlayOn ? "key overlay on" : "key overlay off"
+        if let state, trusted {
+            let overlay = state.overlayOn ? "key overlay on" : "key overlay off"
             let status = add(menu, small("Ready: Accessibility on, \(overlay)"), enabled: false)
             status.image = dot(.systemGreen)
         }
@@ -254,8 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.attributedTitle = title
         item.target = self
         item.isEnabled = enabled
-        if let chord {
-            item.keyEquivalent = chord.key.lowercased()
+        if let chord, let key = Self.keyEquivalent(chord.key) {
+            item.keyEquivalent = key
             var mask: NSEvent.ModifierFlags = []
             if chord.modifiers.contains(.ctrl) { mask.insert(.control) }
             if chord.modifiers.contains(.alt) { mask.insert(.option) }
@@ -265,6 +266,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(item)
         return item
+    }
+
+    func menuWillOpen(_ menu: NSMenu) { Hotkeys.paused = true }
+    func menuDidClose(_ menu: NSMenu) { Hotkeys.paused = false }
+
+    // The character a menu item needs for a config key name; nil leaves the
+    // shortcut off the item rather than showing a wrong one.
+    private static func keyEquivalent(_ key: String) -> String? {
+        let k = key.lowercased()
+        if k.count == 1 { return k }
+        let named: [String: String] = ["space": " ", "return": "\r", "tab": "\t", "escape": "\u{1b}", "delete": "\u{8}"]
+        if let s = named[k] { return s }
+        let function: [String: Int] = [
+            "left": NSLeftArrowFunctionKey, "right": NSRightArrowFunctionKey,
+            "up": NSUpArrowFunctionKey, "down": NSDownArrowFunctionKey,
+        ]
+        var code = function[k]
+        if code == nil, k.hasPrefix("f"), let n = Int(k.dropFirst()), (1...12).contains(n) { code = NSF1FunctionKey + n - 1 }
+        return code.flatMap { UnicodeScalar($0) }.map { String(Character($0)) }
     }
 
     private func plain(_ text: String) -> NSAttributedString {

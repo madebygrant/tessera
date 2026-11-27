@@ -104,6 +104,10 @@ final class FakePlatform: Platform {
     var fullScreen: Set<WinID> = []
     func frontmostWindow() -> WindowInfo? { frontmostPid.flatMap { focusedWindow(pid: $0) } }
     func isFullScreen(_ ref: WinID) -> Bool { fullScreen.contains(ref) }
+    func frontmostWindowSummary() -> (frame: CGRect, app: String)? {
+        guard let w = frontmostWindow(), let name = processName(pid: w.ref.pid) else { return nil }
+        return (w.frame, name)
+    }
 
     // The user clicked into this window.
     func bringToFront(_ ref: WinID) {

@@ -5,6 +5,7 @@ if let command = CommandLine.arguments.dropFirst().first, CLI.commands.contains(
     exit(CLI.run(Array(CommandLine.arguments.dropFirst())))
 }
 
+#if DEBUG
 // Renders sample overlays to PNGs, for checking the drawing without a live screen.
 if let i = CommandLine.arguments.firstIndex(of: "--snapshot-overlay"), i + 1 < CommandLine.arguments.count {
     _ = NSApplication.shared
@@ -38,6 +39,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--snapshot-overlay"), i + 1 < C
     }
     exit(0)
 }
+#endif
 
 // `Tessera --check` validates the config and prints where each slot lands,
 // without touching any window.
