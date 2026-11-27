@@ -99,6 +99,16 @@ final class FakePlatform: Platform {
     func windows(pid: Int32) -> [WindowInfo] { order.filter { $0.pid == pid }.compactMap { wins[$0] } }
     func mainWindow(pid: Int32) -> WindowInfo? { main[pid].flatMap { wins[$0] } }
     func focusedWindow(pid: Int32) -> WindowInfo? { focused[pid].flatMap { wins[$0] } }
+    var frontmostPid: Int32?
+    var fullScreen: Set<WinID> = []
+    func frontmostWindow() -> WindowInfo? { frontmostPid.flatMap { focusedWindow(pid: $0) } }
+    func isFullScreen(_ ref: WinID) -> Bool { fullScreen.contains(ref) }
+
+    // The user clicked into this window.
+    func bringToFront(_ ref: WinID) {
+        frontmostPid = ref.pid
+        focused[ref.pid] = ref
+    }
     func window(_ ref: WinID) -> WindowInfo? { wins[ref] }
 
     func setFrame(_ ref: WinID, _ frame: CGRect) {
@@ -155,7 +165,7 @@ let sceneJSON = """
     "dev":     { "app": "Helium", "titleSuffix": "Development", "profileDir": "Default" },
     "work":    { "app": "Helium", "titleSuffix": "Work", "profileDir": "Profile 1" },
   },
-  "keys": { "switcher": ["ctrl", "alt"], "profile": ["ctrl", "alt", "cmd"], "maximize": "f" },
+  "keys": { "switcher": ["ctrl", "alt"], "profile": ["ctrl", "alt", "cmd"], "slotMove": ["ctrl", "alt", "shift"], "maximize": "f" },
   "profiles": {
     "desk": {
       "key": "j", "screens": ["external"],
@@ -170,6 +180,7 @@ let sceneJSON = """
     "twin": {
       "key": "t", "screens": ["external"],
       "switcher": { "anchor": "zed", "anchorSlot": "left", "otherSlot": "right", "fullSlot": "full", "apps": [] },
+      "slots": ["right", "left", "full"],
       "place": [
         { "app": "ghostty", "slot": "left" },
         { "app": "ghostty", "slot": "right" },
@@ -182,7 +193,7 @@ let sceneJSON = """
     },
   },
   "defaultProfile": "desk",
-  LAUNCH
+  EXTRA
 }
 """
 
@@ -195,9 +206,11 @@ struct Scene {
     let platform = FakePlatform()
     let clock = FakeClock()
     var launchAtLoad = true
+    // Extra top-level JSON5 members, such as feature blocks.
+    var extra = ""
 
     func config() throws -> Config {
-        let json = sceneJSON.replacingOccurrences(of: "LAUNCH", with: launchAtLoad ? "" : "\"launchAtLoad\": false,")
+        let json = sceneJSON.replacingOccurrences(of: "EXTRA", with: (launchAtLoad ? "" : "\"launchAtLoad\": false,") + extra)
         return try Config.decode(Data(json.utf8))
     }
 

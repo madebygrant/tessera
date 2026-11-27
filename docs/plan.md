@@ -4,7 +4,7 @@ Port of the Hammerspoon tessera to a native app. Phase 1 (engine, profiles,
 switcher) and the event-driven, testable core are done. Each wave below lands
 on its own and leaves `make test` passing.
 
-## Wave 1: Slot move
+## Wave 1: Slot move [done 2026-11-27]
 
 Send the focused window, whatever app owns it, to one of the active
 profile's slots.

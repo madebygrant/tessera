@@ -5,6 +5,9 @@ extension Config {
         try key(keys.maximize, "keys.maximize")
         if let mods = keys.profile { _ = try nonEmptyModifiers(mods, "keys.profile") }
         if let mods = keys.slotMove { _ = try nonEmptyModifiers(mods, "keys.slotMove") }
+        if isOn(slotMove) && keys.slotMove == nil {
+            throw ConfigError("slotMove is on but keys.slotMove is missing")
+        }
 
         guard profiles[defaultProfile] != nil else {
             throw ConfigError("defaultProfile '\(defaultProfile)' is not a profile")
@@ -42,9 +45,41 @@ extension Config {
                 try slot(item.slot, "\(at) place")
             }
             for s in p.slots ?? [] { try slot(s, "\(at) slots") }
+            if let list = p.slots, let dup = list.first(where: { s in list.filter { $0 == s }.count > 1 }) {
+                throw ConfigError("\(at) slots lists '\(dup)' twice")
+            }
+            if isOn(slotMove) && p.slotOrder.count > 9 {
+                throw ConfigError("\(at) has \(p.slotOrder.count) slots for slot move; number keys stop at 9")
+            }
             for ref in p.screens ?? [] where screens[ref] == nil {
                 throw ConfigError("\(at) screens names unknown screen '\(ref)'")
             }
+        }
+        try checkCollisions()
+    }
+
+    // Two bindings on one combo: the second fails to register, and the key
+    // silently does the first one's job.
+    private func checkCollisions() throws {
+        var combos: [String: String] = [:]
+        func claim(_ mods: [String], _ key: String, _ what: String) throws {
+            let set = (try? KeyNames.modifiers(mods)) ?? []
+            let combo = Modifier.allCases.filter(set.contains).map(\.rawValue).joined(separator: "+") + "+" + key.lowercased()
+            if let other = combos[combo] {
+                throw ConfigError("\(combo) is bound twice: \(other) and \(what)")
+            }
+            combos[combo] = what
+        }
+        let sw = keys.switcher
+        for i in 0..<maxSwitcherApps { try claim(sw, "\(i + 1)", "switcher app \(i + 1)") }
+        try claim(sw, "left", "switcher left")
+        try claim(sw, "right", "switcher right")
+        try claim(sw, keys.maximize, "maximize")
+        for (name, p) in profiles.sorted(by: { $0.key < $1.key }) {
+            try claim(p.modifier ?? keys.profile ?? [], p.key, "profile '\(name)'")
+        }
+        if isOn(slotMove), let mods = keys.slotMove {
+            for i in 0..<maxSlotMoveKeys { try claim(mods, "\(i + 1)", "slot move \(i + 1)") }
         }
     }
 

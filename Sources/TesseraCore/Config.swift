@@ -85,6 +85,20 @@ public struct Profile: Codable, Sendable {
     public var switcher: SwitcherBlock
     public var slots: [String]?
     public var place: [Placement]?
+
+    // Slot-move key order: `slots` if given, else the slots `place` uses in
+    // order of first appearance, which is how someone reads the profile.
+    public var slotOrder: [String] {
+        if let slots, !slots.isEmpty { return slots }
+        var seen: Set<String> = []
+        return (place ?? []).map(\.slot).filter { seen.insert($0).inserted }
+    }
+}
+
+// An optional feature: off without its block, and `enabled: false` turns it
+// off without deleting it.
+public struct Feature: Codable, Sendable {
+    public var enabled: Bool?
 }
 
 public struct Config: Codable, Sendable {
@@ -97,6 +111,11 @@ public struct Config: Codable, Sendable {
     public var profiles: [String: Profile]
     public var defaultProfile: String
     public var launchAtLoad: Bool?
+    public var slotMove: Feature?
+
+    public func isOn(_ feature: Feature?) -> Bool {
+        feature.map { $0.enabled != false } ?? false
+    }
 
     public static func decode(_ data: Data) throws -> Config {
         let decoder = JSONDecoder()
@@ -143,6 +162,10 @@ public struct Config: Codable, Sendable {
     // Widest switcher list across profiles: that many number keys get bound.
     public var maxSwitcherApps: Int {
         profiles.values.map(\.switcher.apps.count).max() ?? 0
+    }
+
+    public var maxSlotMoveKeys: Int {
+        profiles.values.map(\.slotOrder.count).max() ?? 0
     }
 }
 

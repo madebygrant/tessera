@@ -32,6 +32,9 @@ final class MacPlatform: Platform {
     // AX handles behind the WinIDs the engine holds; refreshed on every lookup.
     private var elements: [WinID: AXUIElement] = [:]
     private var observers: [pid_t: AXObserver] = [:]
+    // Apps Tessera only placed once (slot move): resize events for the clamp,
+    // without app-wide window and title events.
+    private var resizeObservers: [pid_t: AXObserver] = [:]
     private var watchedApps: Set<String> = []
     private var notes: [(NotificationCenter, NSObjectProtocol)] = []
 
@@ -125,6 +128,23 @@ final class MacPlatform: Platform {
 
     func focusedWindow(pid: Int32) -> WindowInfo? {
         axElement(axCopy(axApp(pid), kAXFocusedWindowAttribute)).flatMap { info($0, pid) }
+    }
+
+    // The system-wide focused app is where keystrokes go; NSWorkspace's
+    // frontmost app lags it just after cmd-Tab and misses non-activating panels.
+    func frontmostWindow() -> WindowInfo? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 1.0)
+        var pid: pid_t = 0
+        if let app = axElement(axCopy(system, kAXFocusedApplicationAttribute)),
+           AXUIElementGetPid(app, &pid) == .success {
+            return focusedWindow(pid: pid)
+        }
+        return NSWorkspace.shared.frontmostApplication.flatMap { focusedWindow(pid: $0.processIdentifier) }
+    }
+
+    func isFullScreen(_ ref: WinID) -> Bool {
+        element(ref).flatMap { axCopy($0, "AXFullScreen") as? Bool } ?? false
     }
 
     func window(_ ref: WinID) -> WindowInfo? {
@@ -303,7 +323,7 @@ final class MacPlatform: Platform {
     }
 
     private func terminated(_ pid: pid_t) {
-        if let obs = observers.removeValue(forKey: pid) {
+        for obs in [observers.removeValue(forKey: pid), resizeObservers.removeValue(forKey: pid)].compactMap({ $0 }) {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
         }
         elements = elements.filter { $0.key.pid != pid }
@@ -311,9 +331,7 @@ final class MacPlatform: Platform {
 
     private var refcon: UnsafeMutableRawPointer { Unmanaged.passUnretained(self).toOpaque() }
 
-    @discardableResult
-    private func attach(_ pid: pid_t) -> Bool {
-        if observers[pid] != nil { return true }
+    private func makeObserver(_ pid: pid_t) -> AXObserver? {
         var created: AXObserver?
         let status = AXObserverCreate(pid, { _, element, notification, refcon in
             guard let refcon else { return }
@@ -321,18 +339,30 @@ final class MacPlatform: Platform {
             let name = notification as String
             MainActor.assumeIsolated { platform.axEvent(element, name) }
         }, &created)
-        guard status == .success, let obs = created else { return false }
+        guard status == .success, let obs = created else { return nil }
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+        return obs
+    }
+
+    @discardableResult
+    private func attach(_ pid: pid_t) -> Bool {
+        if observers[pid] != nil { return true }
+        guard let obs = resizeObservers[pid] ?? makeObserver(pid) else { return false }
+        resizeObservers[pid] = obs
         let app = axApp(pid)
         let added = AXObserverAddNotification(obs, app, kAXWindowCreatedNotification as CFString, refcon)
         guard added == .success || added == .notificationAlreadyRegistered else { return false }
         AXObserverAddNotification(obs, app, kAXTitleChangedNotification as CFString, refcon)
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+        resizeObservers[pid] = nil
         observers[pid] = obs
         return true
     }
 
     func watchResize(_ ref: WinID) {
-        guard attach(ref.pid), let obs = observers[ref.pid], let el = elements[ref] else { return }
+        guard let el = elements[ref] else { return }
+        let obs = observers[ref.pid] ?? resizeObservers[ref.pid] ?? makeObserver(ref.pid)
+        guard let obs else { return }
+        if observers[ref.pid] == nil { resizeObservers[ref.pid] = obs }
         AXObserverAddNotification(obs, el, kAXWindowResizedNotification as CFString, refcon)
     }
 

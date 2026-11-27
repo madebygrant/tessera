@@ -74,7 +74,23 @@ public final class Engine {
                 self?.layouts.apply(name)
             })
         }
+        if config.isOn(config.slotMove), let mods = config.keys.slotMove {
+            out += (0..<config.maxSlotMoveKeys).map { i in
+                Binding(modifiers: mods, key: "\(i + 1)") { [weak self] in self?.moveFocused(toSlot: i) }
+            }
+        }
         return out
+    }
+
+    // Moves whatever window has focus, so an app Tessera doesn't know about
+    // still lands somewhere sane. A key past the active profile's count does nothing.
+    func moveFocused(toSlot i: Int) {
+        guard let name = profile, let order = config.profiles[name]?.slotOrder, i < order.count,
+              let win = platform.frontmostWindow(),
+              // A sheet or palette stretched to a slot is never what was meant.
+              win.isStandard, !platform.isFullScreen(win.ref)
+        else { return }
+        place(win.ref, in: frame(ofSlot: order[i]))
     }
 
     public func apply(profile name: String) { layouts.apply(name) }

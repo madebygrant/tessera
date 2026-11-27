@@ -53,10 +53,13 @@
     "maximize": "f",
   },
 
-  // Read by later versions; ignored for now.
+  // Not read yet; coming in later versions.
   "sketchybar": { "enabled": true, "event": "tessera_switcher" },
   "overlay":    { "enabled": true, "delay": 1.0 },
-  "slotMove":   { "enabled": true },
+
+  // keys.slotMove+1..N sends the focused window, from any app, to a slot of
+  // the active profile: its `slots` list, else the slots `place` uses, in order.
+  "slotMove": { "enabled": true },
 
   // key       rides on keys.profile unless the profile names its own `modifier`
   // switcher  anchor + anchorSlot pinned; `apps` cycle through otherSlot on

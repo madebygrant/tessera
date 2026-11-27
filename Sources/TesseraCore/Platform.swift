@@ -69,6 +69,10 @@ public protocol Platform: AnyObject {
     func windows(pid: Int32) -> [WindowInfo]
     func mainWindow(pid: Int32) -> WindowInfo?
     func focusedWindow(pid: Int32) -> WindowInfo?
+    // The window with keyboard focus, whichever app owns it.
+    func frontmostWindow() -> WindowInfo?
+    // Native full screen: the window owns its own Space and won't take a frame.
+    func isFullScreen(_ ref: WinID) -> Bool
     func window(_ ref: WinID) -> WindowInfo?
 
     // Unminimizes first.
