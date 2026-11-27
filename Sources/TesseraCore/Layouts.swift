@@ -26,8 +26,15 @@ final class Layouts {
 
     func stop() {
         screenTimer?.cancel()
+        cancel()
+    }
+
+    // For undo too: a late window would land in the undone layout, and the
+    // debounce would swallow pressing that profile's key again.
+    func cancel() {
         current?.waits.forEach { $0.cancel() }
         current = nil
+        lastRun = [:]
     }
 
     // A dock or undock fires several events; act once they stop. Never launches.
@@ -46,6 +53,7 @@ final class Layouts {
         let now = engine.scheduler.now
         if let last = lastRun[name], now - last < Self.debounce { return }
         lastRun[name] = now
+        if launch { engine.beginUndo() }
         // Retarget the switcher first, so its slots match this layout.
         engine.setProfile(name)
         // A late window from the previous apply must not land in its layout.

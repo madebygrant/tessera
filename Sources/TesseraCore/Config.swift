@@ -56,6 +56,9 @@ public struct Keys: Codable, Sendable {
     public var slotMove: [String]?
     public var profile: [String]?
     public var maximize: String
+    // Both ride on `switcher`; unset means unbound.
+    public var previous: String?
+    public var undo: String?
 }
 
 public struct SwitcherBlock: Codable, Sendable {

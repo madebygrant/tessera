@@ -3,6 +3,8 @@ extension Config {
     public func validate() throws {
         _ = try nonEmptyModifiers(keys.switcher, "keys.switcher")
         try key(keys.maximize, "keys.maximize")
+        if let k = keys.previous { try key(k, "keys.previous") }
+        if let k = keys.undo { try key(k, "keys.undo") }
         if let mods = keys.profile { _ = try nonEmptyModifiers(mods, "keys.profile") }
         if let mods = keys.slotMove { _ = try nonEmptyModifiers(mods, "keys.slotMove") }
         if let delay = overlay?.delay, delay < 0 {
@@ -80,6 +82,8 @@ extension Config {
         let sw = keys.switcher
         var out = (0..<maxSwitcherApps).map { (sw, "\($0 + 1)", "switcher app \($0 + 1)") }
         out += [(sw, "left", "switcher left"), (sw, "right", "switcher right"), (sw, keys.maximize, "maximize")]
+        if let k = keys.previous { out.append((sw, k, "switcher previous")) }
+        if let k = keys.undo { out.append((sw, k, "undo")) }
         for (name, p) in profiles.sorted(by: { $0.key < $1.key }) {
             out.append((p.modifier ?? keys.profile ?? [], p.key, "profile '\(name)'"))
         }

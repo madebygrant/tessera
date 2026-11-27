@@ -11,6 +11,8 @@ final class Switcher {
     private(set) var workspace: [AppEntry] = []
     private(set) var index = 0
     private(set) var maximized = false
+    // The app shown before the current one, for flip.
+    private(set) var previous: Int?
     // One wait per entry, so rapid re-switches don't race to place one window.
     private var pending: [String: Cancellable] = [:]
 
@@ -123,6 +125,7 @@ final class Switcher {
         anchor = config.apps[block.anchor]
         workspace = block.apps.compactMap { config.apps[$0] }
         index = block.startIndex
+        previous = nil
         maximized = false
         engine.pushToBar(focused: false)
         guard apply else { return }
@@ -135,13 +138,32 @@ final class Switcher {
 
     // A key past the active profile's count does nothing.
     func press(_ i: Int) {
-        if i < workspace.count { switchTo(i) }
+        guard i < workspace.count else { return }
+        engine.beginUndo()
+        switchTo(i)
     }
 
     // Reduced first: a step from the CLI can be any Int, and index + Int.max traps.
     func step(_ delta: Int) {
         guard !workspace.isEmpty else { return }
+        engine.beginUndo()
         switchTo(index + delta % workspace.count)
+    }
+
+    // Back to the app shown before this one; pressed again, forward again.
+    func flip() {
+        guard let previous, previous < workspace.count else { return }
+        engine.beginUndo()
+        switchTo(previous)
+    }
+
+    // State only: undo puts the windows back itself.
+    func restore(index i: Int, maximized m: Bool) {
+        cancelPending()
+        guard i < workspace.count else { return }
+        if i != index { previous = index }
+        index = i
+        maximized = m
     }
 
     // A cycled app still launching would land and take focus from the one just
@@ -157,7 +179,9 @@ final class Switcher {
         let count = workspace.count
         guard count > 0 else { return }
         cancelCycledLaunches()
+        let old = index
         index = (i % count + count) % count
+        if index != old { previous = old }
         maximized = false
         // Anchor first and without focus, so the switched-to app ends up focused.
         placeApp(anchor, block.anchorSlot, focus: false)
@@ -167,6 +191,7 @@ final class Switcher {
 
     func toggleMaximize() {
         guard index < workspace.count else { return }
+        engine.beginUndo()
         let entry = workspace[index]
         maximized.toggle()
         let focused: Bool

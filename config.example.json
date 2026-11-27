@@ -51,6 +51,10 @@
     "slotMove": ["ctrl", "alt", "shift"],
     "profile":  ["ctrl", "alt", "cmd"],
     "maximize": "f",
+    // On keys.switcher: back to the app shown before, and undo the last key
+    // that moved windows (press again to redo).
+    "previous": "tab",
+    "undo": "z",
   },
 
   // Not read yet; coming in a later version.

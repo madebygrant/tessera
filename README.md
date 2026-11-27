@@ -16,6 +16,7 @@ through a second slot.
 - Profiles that place each app's window in a slot, picked by the connected screens.
 - A switcher: `keys.switcher` + 1..N shows an app in the other slot, `F` maximizes it.
 - Slot move: `keys.slotMove` + 1..N sends the focused window of any app to a slot.
+- Flip back to the previous app (`keys.previous`) and undo the last move (`keys.undo`, again to redo).
 - An overlay of the slots and their keys while you hold a modifier.
 - Config reload on save, hotkey collision checks and keyboard-layout-aware keys.
 - A `tessera` CLI (`status`, `cycle`, `push`) and a Sketchybar item.

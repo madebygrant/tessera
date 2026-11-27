@@ -25,6 +25,17 @@ public final class Engine {
     private var placedAt: [WinID: Double] = [:]
     private var lastAlert: [String: Double] = [:]
     private var lastCycle = -Double.infinity
+    private var undoBatch: UndoBatch?
+
+    // What one key changed: each moved window's frame from before it, and the
+    // switcher state to go back to.
+    struct UndoBatch {
+        var frames: [WinID: CGRect] = [:]
+        let profile: String?
+        let index: Int
+        let maximized: Bool
+        let focused: WinID?
+    }
 
     nonisolated static let launchTimeout = 5.0
     // An app's own resize this soon after a placement gets clamped (Ghostty
@@ -67,6 +78,8 @@ public final class Engine {
         case let .windowResized(ref):
             if let at = placedAt[ref], scheduler.now - at <= Self.clampWindow { clamp(ref) }
         case .screensChanged:
+            // Frames from before a display change would land on the wrong screen.
+            undoBatch = nil
             layouts.screensChanged()
         case let .modifiersChanged(mods):
             overlay?.modifiersChanged(mods)
@@ -84,6 +97,8 @@ public final class Engine {
         actions.append { [weak self] in self?.switcher.step(-1) }
         actions.append { [weak self] in self?.switcher.step(1) }
         actions.append { [weak self] in self?.switcher.toggleMaximize() }
+        if config.keys.previous != nil { actions.append { [weak self] in self?.switcher.flip() } }
+        if config.keys.undo != nil { actions.append { [weak self] in self?.undo() } }
         for name in config.profiles.keys.sorted() {
             actions.append { [weak self] in self?.layouts.apply(name) }
         }
@@ -109,7 +124,31 @@ public final class Engine {
               // A sheet or palette stretched to a slot is never what was meant.
               win.isStandard, !platform.isFullScreen(win.ref)
         else { return }
+        beginUndo()
         place(win.ref, in: frame(ofSlot: order[i]))
+    }
+
+    // Called as a key starts moving windows; moves outside a key, like the
+    // placing at load, aren't undoable.
+    func beginUndo() {
+        undoBatch = UndoBatch(profile: profile, index: switcher?.index ?? 0, maximized: switcher?.maximized ?? false,
+                              focused: platform.frontmostWindow()?.ref)
+    }
+
+    // Undoing is itself undoable, so a second press puts things back.
+    public func undo() {
+        guard let batch = undoBatch else { return }
+        beginUndo()
+        layouts.cancel()
+        if let name = batch.profile { setProfile(name) }
+        switcher.restore(index: batch.index, maximized: batch.maximized)
+        for (ref, frame) in batch.frames {
+            guard let now = platform.window(ref)?.frame else { continue }
+            undoBatch?.frames[ref] = now
+            platform.setFrame(ref, frame)
+        }
+        if let ref = batch.focused { platform.focus(ref) }
+        pushToBar(focused: batch.focused != nil)
     }
 
     public func apply(profile name: String) { layouts.apply(name) }
@@ -264,6 +303,9 @@ public final class Engine {
     }
 
     func place(_ ref: WinID, in frame: CGRect) {
+        if undoBatch != nil, undoBatch?.frames[ref] == nil, let old = platform.window(ref)?.frame {
+            undoBatch?.frames[ref] = old
+        }
         platform.setFrame(ref, frame)
         clamp(ref)
         let now = scheduler.now
