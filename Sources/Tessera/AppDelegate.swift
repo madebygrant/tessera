@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let platform = MacPlatform()
     private let scheduler = MainScheduler()
     private let hotkeys = Hotkeys()
+    private let control = Control.Server()
     private var engine: Engine?
     private var statusItem: NSStatusItem!
     private var axTimer: Timer?
@@ -19,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
 
         platform.onEvent = { [weak self] in self?.engine?.handle($0) }
+        control.handler = { [weak self] command, payload in self?.handle(command, payload) ?? "" }
+        control.start()
         // Prompts once; macOS remembers the grant per signing identity.
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         start()
@@ -40,6 +43,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             HUD.show("config: \(error)", seconds: 8)
         }
+    }
+
+    private func handle(_ command: Control.Command, _ payload: String) -> String {
+        switch command {
+        case .status:
+            let lines = engine?.status ?? ["No config loaded"]
+            return (lines + ["Accessibility \(AXIsProcessTrusted() ? "on" : "off")"]).joined(separator: "\n")
+        case .cycle:
+            engine?.cycle(Int(payload) ?? 1)
+        case .push:
+            engine?.pushToBar()
+        }
+        return ""
     }
 
     private func checkAccessibility() {

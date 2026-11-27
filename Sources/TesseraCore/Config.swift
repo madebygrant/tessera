@@ -105,6 +105,14 @@ public struct Feature: Codable, Sendable, FeatureBlock {
     public var enabled: Bool?
 }
 
+public struct SketchybarBlock: Codable, Sendable, FeatureBlock {
+    public var enabled: Bool?
+    // Must match the `--add event` name on the bar side.
+    public var event: String?
+    // Where sketchybar lives, if not in Homebrew's usual places.
+    public var bin: String?
+}
+
 public struct OverlayBlock: Codable, Sendable, FeatureBlock {
     public var enabled: Bool?
     // Long enough not to pop up while picking a number.
@@ -123,6 +131,7 @@ public struct Config: Codable, Sendable {
     public var launchAtLoad: Bool?
     public var slotMove: Feature?
     public var overlay: OverlayBlock?
+    public var sketchybar: SketchybarBlock?
 
     public func isOn(_ feature: (some FeatureBlock)?) -> Bool {
         feature.map { $0.enabled != false } ?? false

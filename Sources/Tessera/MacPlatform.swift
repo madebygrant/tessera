@@ -395,6 +395,35 @@ final class MacPlatform: Platform {
     func saveProfile(_ name: String, _ key: String) { UserDefaults.standard.set(name, forKey: key) }
     func showAlert(_ message: String) { HUD.show(message) }
 
+    // Sketchybar's PATH isn't ours, so find the binary rather than run it by name.
+    private var barBinaries: [String: String?] = [:]
+
+    // Misses aren't cached, so installing sketchybar later starts the readout.
+    private func sketchybar(_ configured: String?) -> String? {
+        let key = configured ?? ""
+        if let cached = barBinaries[key] { return cached }
+        let fm = FileManager.default
+        let found: String?
+        if let configured {
+            let path = (configured as NSString).expandingTildeInPath
+            found = fm.isExecutableFile(atPath: path) ? path : nil
+            if found == nil && !barMissLogged {
+                log.error("sketchybar.bin \(configured, privacy: .public) not found; bar readout off")
+                barMissLogged = true
+            }
+        } else {
+            found = ["/opt/homebrew/bin/sketchybar", "/usr/local/bin/sketchybar"].first(where: fm.isExecutableFile)
+        }
+        if found != nil { barBinaries[key] = found }
+        return found
+    }
+    private var barMissLogged = false
+
+    func triggerBar(bin: String?, event: String, fields: [(String, String)]) {
+        guard let path = sketchybar(bin) else { return }
+        run(path, ["--trigger", event] + fields.map { "\($0.0)=\($0.1)" })
+    }
+
     func watchKeys(_ on: Bool) { on ? keyTap.start() : keyTap.stop() }
     var heldModifiers: Set<Modifier> { KeyTap.held }
     func showOverlay(_ boxes: [OverlayBox]) { OverlayWindows.show(boxes) }

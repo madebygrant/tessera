@@ -1,6 +1,10 @@
 import AppKit
 import TesseraCore
 
+if let command = CommandLine.arguments.dropFirst().first, CLI.commands.contains(command) {
+    exit(CLI.run(Array(CommandLine.arguments.dropFirst())))
+}
+
 // `Tessera --check` validates the config and prints where each slot lands,
 // without touching any window.
 if CommandLine.arguments.contains("--check") {

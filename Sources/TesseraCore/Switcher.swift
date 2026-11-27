@@ -70,11 +70,13 @@ final class Switcher {
     // MARK: Placement
 
     // Never opens a second window; only the profile applier does that.
-    private func placeApp(_ entry: AppEntry, _ slot: String, remember: Bool = false, focus: Bool = true, adoptOnly: Bool = false) {
+    // True when it focused a window now, which the bar can then trust.
+    @discardableResult
+    private func placeApp(_ entry: AppEntry, _ slot: String, remember: Bool = false, focus: Bool = true, adoptOnly: Bool = false) -> Bool {
         let key = entry.key
         let win = existingWindow(entry, remember: remember)
         // Before cancelling, so a no-op call leaves a launch in flight alone.
-        if win == nil && adoptOnly { return }
+        if win == nil && adoptOnly { return false }
         pending.removeValue(forKey: key)?.cancel()
 
         let land = { [weak self] (w: WindowInfo) in
@@ -83,19 +85,27 @@ final class Switcher {
             if focus { self.platform.focus(w.ref) }
             if remember || entry.titleSuffix != nil { self.engine.publish(key, w.ref) }
         }
-        if let win { return land(win) }
+        if let win {
+            land(win)
+            return focus
+        }
 
-        if let blocked = engine.launchBlocker(entry.app) { return engine.alert(blocked) }
+        if let blocked = engine.launchBlocker(entry.app) {
+            engine.alert(blocked)
+            return false
+        }
         if !platform.spawn(entry) { platform.open(entry.app) }
         pending[key] = engine.waits.start(app: entry.app, timeout: Engine.launchTimeout, check: { [weak self] in
             guard let self, let w = self.existingWindow(entry, remember: false) else { return false }
             self.pending[key] = nil
             land(w)
+            if focus { self.engine.pushToBar(focused: true) }
             return true
         }, onTimeout: { [weak self] in
             self?.pending[key] = nil
             self?.engine.alert("no window from \(entry.app) after \(Int(Engine.launchTimeout))s")
         })
+        return false
     }
 
     private func cancelPending() {
@@ -114,6 +124,7 @@ final class Switcher {
         workspace = block.apps.compactMap { config.apps[$0] }
         index = block.startIndex
         maximized = false
+        engine.pushToBar(focused: false)
         guard apply else { return }
         let adoptOnly = config.launchAtLoad == false
         placeApp(anchor, block.anchorSlot, focus: false, adoptOnly: adoptOnly)
@@ -127,7 +138,11 @@ final class Switcher {
         if i < workspace.count { switchTo(i) }
     }
 
-    func step(_ delta: Int) { switchTo(index + delta) }
+    // Reduced first: a step from the CLI can be any Int, and index + Int.max traps.
+    func step(_ delta: Int) {
+        guard !workspace.isEmpty else { return }
+        switchTo(index + delta % workspace.count)
+    }
 
     // A cycled app still launching would land and take focus from the one just
     // picked. The anchor's launch stays: retrying it could fork a second instance.
@@ -146,27 +161,32 @@ final class Switcher {
         maximized = false
         // Anchor first and without focus, so the switched-to app ends up focused.
         placeApp(anchor, block.anchorSlot, focus: false)
-        placeApp(workspace[index], block.otherSlot, remember: true)
+        let focused = placeApp(workspace[index], block.otherSlot, remember: true)
+        engine.pushToBar(focused: focused)
     }
 
     func toggleMaximize() {
         guard index < workspace.count else { return }
         let entry = workspace[index]
         maximized.toggle()
+        let focused: Bool
         if maximized {
-            placeApp(entry, block.fullSlot, remember: true)
+            focused = placeApp(entry, block.fullSlot, remember: true)
         } else {
             placeApp(anchor, block.anchorSlot, focus: false)
-            placeApp(entry, block.otherSlot, remember: true)
+            focused = placeApp(entry, block.otherSlot, remember: true)
         }
+        engine.pushToBar(focused: focused)
     }
 
     // The profile applier stacks every cycled app in one slot without raising
     // any, so put the current one on top.
     func profileApplied() {
         maximized = false
-        guard index < workspace.count, let w = existingWindow(workspace[index], remember: true) else { return }
-        platform.raise(w.ref)
+        if index < workspace.count, let w = existingWindow(workspace[index], remember: true) {
+            platform.raise(w.ref)
+        }
+        engine.pushToBar(focused: false)
     }
 
     // Adopt only, never launch: this fires for processes our own `open -na`

@@ -101,6 +101,10 @@ public protocol Platform: AnyObject {
     func saveProfile(_ name: String, _ key: String)
     func showAlert(_ message: String)
 
+    // `sketchybar --trigger event KEY=value...`, without waiting. A missing
+    // sketchybar is a no-op, so this is safe on a machine without the bar.
+    func triggerBar(bin: String?, event: String, fields: [(String, String)])
+
     func watchKeys(_ on: Bool)
     // Read live, for when a modifier release was missed.
     var heldModifiers: Set<Modifier> { get }

@@ -35,7 +35,7 @@ key press first makes it a chord.
 Exit criterion: `make test` passes; the overlay shows on hold and hides on
 release or chord.
 
-## Wave 3: Sketchybar trigger and CLI
+## Wave 3: Sketchybar trigger and CLI [done 2026-11-27]
 
 - Push `APP INDEX COUNT PROFILE MAXIMIZED APP_NAME ANCHOR_NAME FOCUSED` to
   `sketchybar --trigger <event>` on every switch, maximize and profile change.

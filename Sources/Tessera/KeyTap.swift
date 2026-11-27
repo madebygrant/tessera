@@ -1,6 +1,15 @@
 import AppKit
 import TesseraCore
 
+// At file scope: a closure written inside a @MainActor method inherits that
+// isolation, and Swift traps when the tap thread calls it.
+private func keyTapCallback(
+    _: CGEventTapProxy, _ type: CGEventType, _ event: CGEvent, _ refcon: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    if let refcon { Unmanaged<KeyTap>.fromOpaque(refcon).takeUnretainedValue().handle(type, event) }
+    return Unmanaged.passUnretained(event)
+}
+
 // Active, so it needs only Accessibility, not Input Monitoring. It holds each
 // keystroke until the callback returns, so it runs on its own thread: on main,
 // a slow AX call would stall typing everywhere.
@@ -80,10 +89,7 @@ final class KeyTap: @unchecked Sendable {
         let created = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask,
-            callback: { _, type, event, refcon in
-                if let refcon { Unmanaged<KeyTap>.fromOpaque(refcon).takeUnretainedValue().handle(type, event) }
-                return Unmanaged.passUnretained(event)
-            },
+            callback: keyTapCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         )
         guard let created else {
@@ -125,7 +131,7 @@ final class KeyTap: @unchecked Sendable {
     }
 
     // On the tap thread: read what's needed and hand it to main without waiting.
-    private func handle(_ type: CGEventType, _ event: CGEvent) {
+    fileprivate func handle(_ type: CGEventType, _ event: CGEvent) {
         let emitted: PlatformEvent
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:

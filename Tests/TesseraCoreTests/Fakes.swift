@@ -147,6 +147,14 @@ final class FakePlatform: Platform {
     func saveProfile(_ name: String, _ key: String) { saved[key] = name }
     func showAlert(_ message: String) { alerts.append(message) }
 
+    // "event K=V K=V ..." per trigger.
+    private(set) var barTriggers: [String] = []
+    private(set) var barBins: [String?] = []
+    func triggerBar(bin: String?, event: String, fields: [(String, String)]) {
+        barBins.append(bin)
+        barTriggers.append(([event] + fields.map { "\($0.0)=\($0.1)" }).joined(separator: " "))
+    }
+
     private(set) var watchingKeys = false
     // Every overlay drawn, latest last; nil while hidden.
     private(set) var overlayDraws: [[OverlayBox]] = []
@@ -220,9 +228,12 @@ struct Scene {
     var launchAtLoad = true
     // Extra top-level JSON5 members, such as feature blocks.
     var extra = ""
+    // Text swaps on the scene JSON, for one-off variations.
+    var edits: [(String, String)] = []
 
     func config() throws -> Config {
-        let json = sceneJSON.replacingOccurrences(of: "EXTRA", with: (launchAtLoad ? "" : "\"launchAtLoad\": false,") + extra)
+        var json = sceneJSON.replacingOccurrences(of: "EXTRA", with: (launchAtLoad ? "" : "\"launchAtLoad\": false,") + extra)
+        for (from, to) in edits { json = json.replacingOccurrences(of: from, with: to) }
         return try Config.decode(Data(json.utf8))
     }
 

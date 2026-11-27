@@ -22,6 +22,7 @@ public final class Engine {
     private var registry: [String: WinID] = [:]
     private var placedAt: [WinID: Double] = [:]
     private var lastAlert: [String: Double] = [:]
+    private var lastCycle = -Double.infinity
 
     static let launchTimeout = 5.0
     // An app's own resize this soon after a placement gets clamped (Ghostty
@@ -37,6 +38,7 @@ public final class Engine {
         layouts = Layouts(engine: self)
         let start = config.bestProfile(saved: savedProfile, connected: screenNames)
         switcher = Switcher(engine: self, startProfile: start)
+        pushToBar(focused: false)
         if config.isOn(config.overlay) {
             overlay = Overlay(engine: self, delay: config.overlay?.delay ?? 1.0)
         }
@@ -112,6 +114,36 @@ public final class Engine {
 
     public func apply(profile name: String) { layouts.apply(name) }
 
+    // From the bar's scroll: a trackpad sends a burst, so one step per 0.4s.
+    public func cycle(_ step: Int) {
+        let now = scheduler.now
+        guard now - lastCycle >= 0.4 else { return }
+        lastCycle = now
+        switcher.step(step)
+    }
+
+    // The bar restarts on its own schedule and asks for the current state.
+    public func pushToBar() { pushToBar(focused: false) }
+
+    // `focused` says the switcher just pulled the app forward, which beats
+    // waiting on the bar's own front_app event. A retarget focuses nothing.
+    func pushToBar(focused: Bool) {
+        guard config.isOn(config.sketchybar), let switcher, let block = switcher.block else { return }
+        let i = switcher.index
+        let current = i < switcher.workspace.count ? switcher.workspace[i] : nil
+        platform.triggerBar(bin: config.sketchybar?.bin, event: config.sketchybar?.event ?? "tessera_switcher", fields: [
+            ("APP", i < block.apps.count ? block.apps[i] : ""),
+            ("INDEX", "\(i + 1)"),
+            ("COUNT", "\(block.apps.count)"),
+            ("PROFILE", profile ?? ""),
+            ("MAXIMIZED", "\(switcher.maximized)"),
+            // As macOS reports them, so the bar can match front_app.
+            ("APP_NAME", current.map { displayName($0.app) } ?? ""),
+            ("ANCHOR_NAME", config.apps[block.anchor].map { displayName($0.app) } ?? ""),
+            ("FOCUSED", "\(focused)"),
+        ])
+    }
+
     public var status: [String] {
         ["Profile \(profile ?? "none")"] + switcher.status
     }
@@ -145,6 +177,11 @@ public final class Engine {
 
     func trackedWindow(_ key: String) -> WindowInfo? {
         registry[key].flatMap { platform.window($0) }
+    }
+
+    // An entry may hold a bundle id; the running process knows its display name.
+    func displayName(_ app: String) -> String {
+        platform.processes(named: app).lazy.compactMap(\.name).first ?? app
     }
 
     func frame(ofSlot name: String) -> CGRect { config.frame(ofSlot: name, screens: platform.screens) }

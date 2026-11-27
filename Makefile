@@ -3,6 +3,8 @@
 IDENTITY ?= Tenure Local
 APP := build/Tessera.app
 INSTALL_DIR := $(HOME)/Applications
+# `tessera status | cycle | push` from a shell.
+BIN_DIR ?= $(HOME)/bin
 
 .PHONY: app install run check test clean
 
@@ -18,6 +20,8 @@ install: app
 	-pkill -x Tessera
 	rm -rf $(INSTALL_DIR)/Tessera.app
 	cp -R $(APP) $(INSTALL_DIR)/
+	mkdir -p $(BIN_DIR)
+	ln -sf $(INSTALL_DIR)/Tessera.app/Contents/MacOS/Tessera $(BIN_DIR)/tessera
 	open $(INSTALL_DIR)/Tessera.app
 
 check:
