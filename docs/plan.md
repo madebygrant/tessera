@@ -20,7 +20,7 @@ profile's slots.
 Exit criterion: `make test` passes, including tests for slot order, the
 no-op past the count, and the gate.
 
-## Wave 2: Overlay
+## Wave 2: Overlay [done 2026-11-27]
 
 Hold `keys.switcher` or `keys.slotMove` alone for `overlay.delay` and boxes
 show the active profile's slots and what each key does. Release hides it; a

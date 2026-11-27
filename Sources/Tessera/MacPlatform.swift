@@ -37,8 +37,10 @@ final class MacPlatform: Platform {
     private var resizeObservers: [pid_t: AXObserver] = [:]
     private var watchedApps: Set<String> = []
     private var notes: [(NotificationCenter, NSObjectProtocol)] = []
+    private let keyTap = KeyTap()
 
     init() {
+        keyTap.onEvent = { [weak self] in self?.onEvent?($0) }
         let ws = NSWorkspace.shared.notificationCenter
         listen(ws, NSWorkspace.didLaunchApplicationNotification) { $0.launched($1) }
         listen(ws, NSWorkspace.didActivateApplicationNotification) { $0.onEvent?(.appActivated($0.process($1))) }
@@ -392,4 +394,9 @@ final class MacPlatform: Platform {
     func savedProfile(_ key: String) -> String? { UserDefaults.standard.string(forKey: key) }
     func saveProfile(_ name: String, _ key: String) { UserDefaults.standard.set(name, forKey: key) }
     func showAlert(_ message: String) { HUD.show(message) }
+
+    func watchKeys(_ on: Bool) { on ? keyTap.start() : keyTap.stop() }
+    var heldModifiers: Set<Modifier> { KeyTap.held }
+    func showOverlay(_ boxes: [OverlayBox]) { OverlayWindows.show(boxes) }
+    func hideOverlay() { OverlayWindows.hide() }
 }

@@ -57,6 +57,9 @@ public enum PlatformEvent: Sendable {
     case windowsChanged(AppProcess)
     case windowResized(WinID)
     case screensChanged
+    // From the key tap, only while watchKeys is on.
+    case modifiersChanged(Set<Modifier>)
+    case keyDown
 }
 
 // Everything the engine needs from macOS, so tests can swap in a fake.
@@ -97,6 +100,12 @@ public protocol Platform: AnyObject {
     func savedProfile(_ key: String) -> String?
     func saveProfile(_ name: String, _ key: String)
     func showAlert(_ message: String)
+
+    func watchKeys(_ on: Bool)
+    // Read live, for when a modifier release was missed.
+    var heldModifiers: Set<Modifier> { get }
+    func showOverlay(_ boxes: [OverlayBox])
+    func hideOverlay()
 }
 
 @MainActor
@@ -139,6 +148,15 @@ extension Config {
         let spec = screens[slot.screen] ?? slot.screen
         guard let screen = list.first(where: { $0.name.contains(spec) }) ?? list.first else { return .zero }
         return frameFor(screen: screen.usable, inset: screenInsets?[slot.screen], gap: gap ?? 0, slot: slot)
+    }
+}
+
+extension Config {
+    // The usable area of the screen a slot lands on, after the same fallback.
+    public func usableScreen(ofSlot name: String, screens list: [ScreenInfo]) -> CGRect? {
+        guard let slot = slots[name] else { return nil }
+        let spec = screens[slot.screen] ?? slot.screen
+        return (list.first(where: { $0.name.contains(spec) }) ?? list.first)?.usable
     }
 }
 

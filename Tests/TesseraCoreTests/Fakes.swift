@@ -146,6 +146,18 @@ final class FakePlatform: Platform {
     func savedProfile(_ key: String) -> String? { saved[key] }
     func saveProfile(_ name: String, _ key: String) { saved[key] = name }
     func showAlert(_ message: String) { alerts.append(message) }
+
+    private(set) var watchingKeys = false
+    // Every overlay drawn, latest last; nil while hidden.
+    private(set) var overlayDraws: [[OverlayBox]] = []
+    private(set) var overlay: [OverlayBox]?
+    func watchKeys(_ on: Bool) { watchingKeys = on }
+    var heldModifiers: Set<Modifier> = []
+    func showOverlay(_ boxes: [OverlayBox]) {
+        overlayDraws.append(boxes)
+        overlay = boxes
+    }
+    func hideOverlay() { overlay = nil }
 }
 
 // External 2000x1000: left and right halves, plus full. Laptop: max.

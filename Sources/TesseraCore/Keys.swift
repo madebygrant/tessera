@@ -1,5 +1,14 @@
 public enum Modifier: String, CaseIterable, Sendable {
     case ctrl, alt, shift, cmd
+
+    var glyph: String {
+        switch self {
+        case .ctrl: "⌃"
+        case .alt: "⌥"
+        case .shift: "⇧"
+        case .cmd: "⌘"
+        }
+    }
 }
 
 public enum KeyNames {
@@ -38,5 +47,16 @@ public enum KeyNames {
 
     public static func code(_ key: String) -> UInt32? {
         codes[key.lowercased()]
+    }
+
+    // In the order macOS menus print them: ⌃⌥⇧⌘.
+    static func glyphs(_ names: [String]) -> String {
+        let set = (try? modifiers(names)) ?? []
+        return Modifier.allCases.filter(set.contains).map(\.glyph).joined()
+    }
+
+    static func label(_ key: String) -> String {
+        let names = ["left": "←", "right": "→", "up": "↑", "down": "↓", "space": "Space"]
+        return names[key.lowercased()] ?? key.uppercased()
     }
 }

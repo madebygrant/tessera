@@ -53,9 +53,12 @@
     "maximize": "f",
   },
 
-  // Not read yet; coming in later versions.
+  // Not read yet; coming in a later version.
   "sketchybar": { "enabled": true, "event": "tessera_switcher" },
-  "overlay":    { "enabled": true, "delay": 1.0 },
+
+  // Hold keys.switcher or keys.slotMove alone for `delay` seconds to see what
+  // each key does. Long enough not to pop up while picking a number.
+  "overlay": { "enabled": true, "delay": 1.0 },
 
   // keys.slotMove+1..N sends the focused window, from any app, to a slot of
   // the active profile: its `slots` list, else the slots `place` uses, in order.

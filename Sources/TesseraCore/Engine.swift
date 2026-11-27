@@ -15,6 +15,7 @@ public final class Engine {
     let waits: Waits
     private(set) var switcher: Switcher!
     private(set) var layouts: Layouts!
+    private(set) var overlay: Overlay?
     public private(set) var profile: String?
 
     // Entry key -> the window the switcher placed for it; profiles reuse it.
@@ -36,12 +37,18 @@ public final class Engine {
         layouts = Layouts(engine: self)
         let start = config.bestProfile(saved: savedProfile, connected: screenNames)
         switcher = Switcher(engine: self, startProfile: start)
+        if config.isOn(config.overlay) {
+            overlay = Overlay(engine: self, delay: config.overlay?.delay ?? 1.0)
+        }
+        platform.watchKeys(overlay != nil)
     }
 
     public func stop() {
         waits.cancelAll()
         layouts.stop()
         switcher.stop()
+        overlay?.stop()
+        platform.watchKeys(false)
     }
 
     public func handle(_ event: PlatformEvent) {
@@ -57,6 +64,10 @@ public final class Engine {
             if let at = placedAt[ref], scheduler.now - at <= Self.clampWindow { clamp(ref) }
         case .screensChanged:
             layouts.screensChanged()
+        case let .modifiersChanged(mods):
+            overlay?.modifiersChanged(mods)
+        case .keyDown:
+            overlay?.keyDown()
         }
     }
 
@@ -79,7 +90,13 @@ public final class Engine {
                 Binding(modifiers: mods, key: "\(i + 1)") { [weak self] in self?.moveFocused(toSlot: i) }
             }
         }
-        return out
+        // Any hotkey is a chord, not a look, even when the tap can't see it.
+        return out.map { b in
+            Binding(modifiers: b.modifiers, key: b.key) { [weak self] in
+                self?.overlay?.keyDown()
+                b.action()
+            }
+        }
     }
 
     // Moves whatever window has focus, so an app Tessera doesn't know about
@@ -131,6 +148,7 @@ public final class Engine {
     }
 
     func frame(ofSlot name: String) -> CGRect { config.frame(ofSlot: name, screens: platform.screens) }
+    func usableScreen(ofSlot name: String) -> CGRect? { config.usableScreen(ofSlot: name, screens: platform.screens) }
 
     func standardWindows(_ app: String) -> [WindowInfo] {
         platform.processes(named: app).flatMap { platform.windows(pid: $0.pid).filter(\.isStandard) }

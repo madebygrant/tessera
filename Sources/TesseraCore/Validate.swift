@@ -5,6 +5,9 @@ extension Config {
         try key(keys.maximize, "keys.maximize")
         if let mods = keys.profile { _ = try nonEmptyModifiers(mods, "keys.profile") }
         if let mods = keys.slotMove { _ = try nonEmptyModifiers(mods, "keys.slotMove") }
+        if let delay = overlay?.delay, delay < 0 {
+            throw ConfigError("overlay.delay can't be negative")
+        }
         if isOn(slotMove) && keys.slotMove == nil {
             throw ConfigError("slotMove is on but keys.slotMove is missing")
         }

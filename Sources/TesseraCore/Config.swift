@@ -97,8 +97,18 @@ public struct Profile: Codable, Sendable {
 
 // An optional feature: off without its block, and `enabled: false` turns it
 // off without deleting it.
-public struct Feature: Codable, Sendable {
+public protocol FeatureBlock {
+    var enabled: Bool? { get }
+}
+
+public struct Feature: Codable, Sendable, FeatureBlock {
     public var enabled: Bool?
+}
+
+public struct OverlayBlock: Codable, Sendable, FeatureBlock {
+    public var enabled: Bool?
+    // Long enough not to pop up while picking a number.
+    public var delay: Double?
 }
 
 public struct Config: Codable, Sendable {
@@ -112,8 +122,9 @@ public struct Config: Codable, Sendable {
     public var defaultProfile: String
     public var launchAtLoad: Bool?
     public var slotMove: Feature?
+    public var overlay: OverlayBlock?
 
-    public func isOn(_ feature: Feature?) -> Bool {
+    public func isOn(_ feature: (some FeatureBlock)?) -> Bool {
         feature.map { $0.enabled != false } ?? false
     }
 

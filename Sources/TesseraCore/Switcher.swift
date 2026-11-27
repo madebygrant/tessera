@@ -6,7 +6,7 @@ final class Switcher {
     private var config: Config { engine.config }
     private var platform: Platform { engine.platform }
 
-    private var block: SwitcherBlock!
+    private(set) var block: SwitcherBlock!
     private var anchor: AppEntry!
     private(set) var workspace: [AppEntry] = []
     private(set) var index = 0
