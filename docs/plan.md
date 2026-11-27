@@ -45,7 +45,7 @@ release or chord.
 
 Exit criterion: the bar updates on a switch and scrolling on it cycles apps.
 
-## Wave 4: Launch at login
+## Wave 4: Launch at login [done 2026-11-27]
 
 - Register with `SMAppService.mainApp`; a menu toggle.
 

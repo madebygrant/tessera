@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import TesseraCore
 
 @MainActor
@@ -25,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Prompts once; macOS remembers the grant per signing identity.
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         start()
+        syncLoginItem(fromMenu: false)
         // Accessibility can drop across a reboot, and then the keys just look dead.
         axTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated { [weak self] in self?.checkAccessibility() }
@@ -58,6 +60,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return ""
     }
 
+    // Unset means on, as Hammerspoon was; the menu toggle records a choice.
+    private static let loginPreference = "openAtLogin"
+
+    // SMAppService registers the running bundle, and a build copy is deleted by
+    // the next `make app`, so only an installed copy touches the login item.
+    private var isInstalled: Bool {
+        let dir = Bundle.main.bundleURL.standardizedFileURL.deletingLastPathComponent().path
+        let home = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications").standardizedFileURL.path
+        return dir == "/Applications" || dir == home
+    }
+
+    nonisolated private static func isOn(_ status: SMAppService.Status) -> Bool {
+        status == .enabled || status == .requiresApproval
+    }
+
+    // Brings the login item in line with the preference. Off the main thread:
+    // register and unregister wait on the login-items daemon.
+    private func syncLoginItem(fromMenu: Bool) {
+        guard isInstalled else { return }
+        let want = UserDefaults.standard.object(forKey: Self.loginPreference) as? Bool ?? true
+        Task.detached {
+            let service = SMAppService.mainApp
+            var failure: String?
+            do {
+                if want && !Self.isOn(service.status) { try service.register() }
+                if !want && Self.isOn(service.status) { try await service.unregister() }
+            } catch {
+                failure = error.localizedDescription
+            }
+            let pending = want && service.status == .requiresApproval
+            await MainActor.run {
+                if let failure { HUD.show("couldn't change Open at Login: \(failure)") }
+                guard pending else { return }
+                if fromMenu {
+                    SMAppService.openSystemSettingsLoginItems()
+                } else {
+                    HUD.show("allow Tessera in System Settings > General > Login Items to open it at login", seconds: 6)
+                }
+            }
+        }
+    }
+
+    @objc private func toggleOpenAtLogin() {
+        // Pending approval counts as on, so a click while pending turns it off.
+        UserDefaults.standard.set(!Self.isOn(SMAppService.mainApp.status), forKey: Self.loginPreference)
+        syncLoginItem(fromMenu: true)
+    }
+
     private func checkAccessibility() {
         let ok = AXIsProcessTrusted()
         if !ok && !axWarned { HUD.show("no Accessibility permission; nothing will move until it's back") }
@@ -84,6 +134,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(withTitle: "Accessibility permission is off", action: nil, keyEquivalent: "").isEnabled = false
         }
         menu.addItem(.separator())
+        let login = menu.addItem(withTitle: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
+        login.target = self
+        if !isInstalled {
+            login.title = "Open at Login (install to ~/Applications first)"
+            login.isEnabled = false
+        } else {
+            switch SMAppService.mainApp.status {
+            case .enabled: login.state = .on
+            case .requiresApproval:
+                login.title = "Open at Login (allow in System Settings)"
+                login.state = .mixed
+            default: login.state = .off
+            }
+        }
         menu.addItem(withTitle: "Open Config", action: #selector(openConfig), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Reload Config", action: #selector(reload), keyEquivalent: "r").target = self
         menu.addItem(withTitle: "Quit Tessera", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
