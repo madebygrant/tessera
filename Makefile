@@ -6,14 +6,15 @@ INSTALL_DIR := $(HOME)/Applications
 # `tessera status | cycle | push` from a shell.
 BIN_DIR ?= $(HOME)/bin
 
-.PHONY: app install run check test clean
+.PHONY: app install icon check test clean
 
 app:
 	swift build -c release
 	rm -rf $(APP)
-	mkdir -p $(APP)/Contents/MacOS
+	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp .build/release/Tessera $(APP)/Contents/MacOS/
 	cp Resources/Info.plist $(APP)/Contents/
+	cp Resources/AppIcon.icns $(APP)/Contents/Resources/
 	codesign --force --sign "$(IDENTITY)" $(APP)
 
 install: app
@@ -23,6 +24,12 @@ install: app
 	mkdir -p $(BIN_DIR)
 	ln -sf $(INSTALL_DIR)/Tessera.app/Contents/MacOS/Tessera $(BIN_DIR)/tessera
 	open $(INSTALL_DIR)/Tessera.app
+
+# Regenerates Resources/AppIcon.icns from make-icon.swift.
+icon:
+	rm -rf build/AppIcon.iconset
+	swift Resources/make-icon.swift build/AppIcon.iconset
+	iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
 
 check:
 	swift run -q Tessera --check
