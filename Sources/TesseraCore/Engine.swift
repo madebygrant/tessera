@@ -88,7 +88,9 @@ public final class Engine {
             actions.append { [weak self] in self?.layouts.apply(name) }
         }
         if config.isOn(config.slotMove), config.keys.slotMove != nil {
-            actions += (0..<config.maxSlotMoveKeys).map { i in { [weak self] in self?.moveFocused(toSlot: i) } }
+            for i in 0..<config.maxSlotMoveKeys {
+                actions.append { [weak self] in self?.moveFocused(toSlot: i) }
+            }
         }
         return zip(config.hotkeys, actions).map { hotkey, action in
             // Any hotkey is a chord, not a look, even when the tap can't see it.
