@@ -96,6 +96,7 @@ final class FakePlatform: Platform {
     // MARK: Platform
 
     func processes(named app: String) -> [AppProcess] { procs.filter { $0.matches(app) } }
+    func processName(pid: Int32) -> String? { procs.first { $0.pid == pid }?.name }
     func windows(pid: Int32) -> [WindowInfo] { order.filter { $0.pid == pid }.compactMap { wins[$0] } }
     func mainWindow(pid: Int32) -> WindowInfo? { main[pid].flatMap { wins[$0] } }
     func focusedWindow(pid: Int32) -> WindowInfo? { focused[pid].flatMap { wins[$0] } }
@@ -145,7 +146,8 @@ final class FakePlatform: Platform {
 
     func savedProfile(_ key: String) -> String? { saved[key] }
     func saveProfile(_ name: String, _ key: String) { saved[key] = name }
-    func showAlert(_ message: String) { alerts.append(message) }
+    // Titles, which is what a person reads first.
+    func showAlert(_ notice: Notice) { alerts.append(notice.title) }
 
     // "event K=V K=V ..." per trigger.
     private(set) var barTriggers: [String] = []
@@ -157,13 +159,13 @@ final class FakePlatform: Platform {
 
     private(set) var watchingKeys = false
     // Every overlay drawn, latest last; nil while hidden.
-    private(set) var overlayDraws: [[OverlayBox]] = []
-    private(set) var overlay: [OverlayBox]?
+    private(set) var overlayDraws: [[OverlayElement]] = []
+    private(set) var overlay: [OverlayElement]?
     func watchKeys(_ on: Bool) { watchingKeys = on }
     var heldModifiers: Set<Modifier> = []
-    func showOverlay(_ boxes: [OverlayBox]) {
-        overlayDraws.append(boxes)
-        overlay = boxes
+    func showOverlay(_ elements: [OverlayElement]) {
+        overlayDraws.append(elements)
+        overlay = elements
     }
     func hideOverlay() { overlay = nil }
 }

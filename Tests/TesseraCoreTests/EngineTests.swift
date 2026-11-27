@@ -70,7 +70,7 @@ struct SwitcherTests {
         s.clock.advance(4.5)
         #expect(s.platform.alerts.isEmpty)
         s.clock.advance(10)
-        #expect(s.platform.alerts == ["no window from Herdr after 5s"])
+        #expect(s.platform.alerts == ["No window from Herdr after 5s"])
     }
 
     @Test func switchingAwayCancelsAPendingLaunch() throws {
@@ -113,7 +113,7 @@ struct SwitcherTests {
         let engine = try s.start()
         engine.switcher.press(1)
         #expect(s.platform.launches.isEmpty)
-        #expect(s.platform.alerts == ["Herdr has a window on another Space; not opening another"])
+        #expect(s.platform.alerts == ["Herdr has a window on another Space"])
     }
 
     @Test func noLaunchAtLoadWhenDisabled() throws {

@@ -65,25 +65,28 @@ extension Config {
     // silently does the first one's job.
     private func checkCollisions() throws {
         var combos: [String: String] = [:]
-        func claim(_ mods: [String], _ key: String, _ what: String) throws {
-            let set = (try? KeyNames.modifiers(mods)) ?? []
-            let combo = Modifier.allCases.filter(set.contains).map(\.rawValue).joined(separator: "+") + "+" + key.lowercased()
+        for h in hotkeys {
+            let set = (try? KeyNames.modifiers(h.modifiers)) ?? []
+            let combo = Modifier.allCases.filter(set.contains).map(\.rawValue).joined(separator: "+") + "+" + h.key.lowercased()
             if let other = combos[combo] {
-                throw ConfigError("\(combo) is bound twice: \(other) and \(what)")
+                throw ConfigError("\(combo) is bound twice: \(other) and \(h.purpose)")
             }
-            combos[combo] = what
+            combos[combo] = h.purpose
         }
+    }
+
+    // Every hotkey the config binds, in the order the engine binds them.
+    public var hotkeys: [(modifiers: [String], key: String, purpose: String)] {
         let sw = keys.switcher
-        for i in 0..<maxSwitcherApps { try claim(sw, "\(i + 1)", "switcher app \(i + 1)") }
-        try claim(sw, "left", "switcher left")
-        try claim(sw, "right", "switcher right")
-        try claim(sw, keys.maximize, "maximize")
+        var out = (0..<maxSwitcherApps).map { (sw, "\($0 + 1)", "switcher app \($0 + 1)") }
+        out += [(sw, "left", "switcher left"), (sw, "right", "switcher right"), (sw, keys.maximize, "maximize")]
         for (name, p) in profiles.sorted(by: { $0.key < $1.key }) {
-            try claim(p.modifier ?? keys.profile ?? [], p.key, "profile '\(name)'")
+            out.append((p.modifier ?? keys.profile ?? [], p.key, "profile '\(name)'"))
         }
         if isOn(slotMove), let mods = keys.slotMove {
-            for i in 0..<maxSlotMoveKeys { try claim(mods, "\(i + 1)", "slot move \(i + 1)") }
+            out += (0..<maxSlotMoveKeys).map { (mods, "\($0 + 1)", "slot move \($0 + 1)") }
         }
+        return out
     }
 
     private func app(_ ref: String, _ field: String) throws {

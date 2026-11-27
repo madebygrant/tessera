@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import ServiceManagement
 import TesseraCore
 
@@ -12,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var axTimer: Timer?
     private var axWarned = false
+    private var configWatcher: ConfigWatcher?
+    // Hotkey problems already shown this session, so a rebind doesn't repeat them.
+    private var warnedHotkeys: Set<String> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -25,26 +29,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         control.start()
         // Prompts once; macOS remembers the grant per signing identity.
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        Toasts.anchor = { [weak self] in self?.statusItem.button?.window?.frame }
+        ProfileImport.run()
+        let watcher = ConfigWatcher(url: ConfigFile.url)
+        watcher.onChange = { [weak self] in self?.start() }
+        configWatcher = watcher
         start()
+        watcher.start()
         syncLoginItem(fromMenu: false)
+
+        // Letter keys map through the layout, so a layout switch moves them.
+        // Delivered immediately: a background app would otherwise get it late.
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(inputSourceChanged),
+            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil, suspensionBehavior: .deliverImmediately
+        )
         // Accessibility can drop across a reboot, and then the keys just look dead.
         axTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated { [weak self] in self?.checkAccessibility() }
         }
     }
 
+    // A config that fails to load leaves the running one in place, so a typo
+    // mid-edit doesn't take the keys away.
     private func start() {
-        engine?.stop()
-        engine = nil
-        hotkeys.unbindAll()
+        let data: Data
         do {
-            let engine = Engine(config: try ConfigFile.load(), platform: platform, scheduler: scheduler)
-            for b in engine.bindings { hotkeys.bind(b.modifiers, b.key, b.action) }
-            self.engine = engine
-            log.info("started, profile \(engine.profile ?? "none", privacy: .public)")
+            data = try Data(contentsOf: ConfigFile.url)
         } catch {
-            HUD.show("config: \(error)", seconds: 8)
+            Toasts.show(Notice("No config yet", "Copy config.example.json to the path below. Tessera loads it as soon as it's there.",
+                               code: ConfigFile.url.path), seconds: 15)
+            return
         }
+        configWatcher?.noteContents(data)
+        let config: Config
+        do {
+            config = try Config.decode(data)
+        } catch {
+            let kept = engine == nil ? "Fix it and save; Tessera reloads on its own." : "The last config that loaded is still running."
+            Toasts.show(Notice("Config not loaded", kept, code: "\(error)", action: .openConfig), seconds: 15)
+            return
+        }
+        engine?.stop()
+        let engine = Engine(config: config, platform: platform, scheduler: scheduler)
+        self.engine = engine
+        warnedHotkeys = []
+        bindHotkeys()
+        log.info("started, profile \(engine.profile ?? "none", privacy: .public)")
+    }
+
+    @objc private func inputSourceChanged() { bindHotkeys() }
+
+    private func bindHotkeys() {
+        let problems = hotkeys.bindAll(engine?.bindings ?? [])
+        let fresh = problems.filter { !warnedHotkeys.contains($0) }
+        warnedHotkeys.formUnion(fresh)
+        guard !fresh.isEmpty else { return }
+        Toasts.show(Notice(fresh.count == 1 ? "A shortcut won't work" : "\(fresh.count) shortcuts won't work",
+                           "Change them in your config, or in System Settings > Keyboard > Keyboard Shortcuts.",
+                           code: fresh.joined(separator: "\n"), action: .openConfig), seconds: 15)
     }
 
     private func handle(_ command: Control.Command, _ payload: String) -> String {
@@ -91,12 +135,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             let pending = want && service.status == .requiresApproval
             await MainActor.run {
-                if let failure { HUD.show("couldn't change Open at Login: \(failure)") }
+                if let failure { Toasts.show(Notice("Couldn't change Open at Login", failure)) }
                 guard pending else { return }
                 if fromMenu {
                     SMAppService.openSystemSettingsLoginItems()
                 } else {
-                    HUD.show("allow Tessera in System Settings > General > Login Items to open it at login", seconds: 6)
+                    Toasts.show(Notice("Allow Tessera to open at login",
+                                       "macOS is holding it in System Settings > General > Login Items."))
                 }
             }
         }
@@ -110,47 +155,161 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func checkAccessibility() {
         let ok = AXIsProcessTrusted()
-        if !ok && !axWarned { HUD.show("no Accessibility permission; nothing will move until it's back") }
+        statusItem.button?.image = StatusIcon.make(attention: !ok)
+        if !ok && !axWarned {
+            Toasts.show(Notice("Tessera has no Accessibility permission",
+                               "Nothing moves until it's back. Turn it on, then quit and reopen Tessera.",
+                               action: .openAccessibilitySettings), seconds: 20)
+        }
         axWarned = !ok
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        menu.autoenablesItems = false
+        let trusted = AXIsProcessTrusted()
+        statusItem.button?.image = StatusIcon.make(attention: !trusted)
+        if !trusted { addAccessibilityWarning(to: menu) }
+
         if let engine {
-            for line in engine.status {
-                menu.addItem(withTitle: line, action: nil, keyEquivalent: "").isEnabled = false
+            let state = engine.menuState
+            let header = add(menu, bold(state.profileName ?? "No profile"), chord: state.profileChord, enabled: false)
+            header.toolTip = "The active profile"
+            if !state.screens.isEmpty {
+                add(menu, small(state.screens.joined(separator: " and ")), enabled: false)
             }
             menu.addItem(.separator())
-            for name in engine.config.profiles.keys.sorted() {
-                let item = menu.addItem(withTitle: name, action: #selector(applyProfile(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = name
-                item.state = name == engine.profile ? .on : .off
+
+            if !state.apps.isEmpty {
+                menu.addItem(.sectionHeader(title: "Switcher"))
+                for (i, app) in state.apps.enumerated() {
+                    let title = app.running ? plain(app.name) : withNote(app.name, "opens on switch")
+                    let item = add(menu, title, action: #selector(switchApp(_:)), chord: app.chord, enabled: trusted)
+                    item.state = app.showing ? .on : .off
+                    item.representedObject = i
+                }
+                add(menu, plain(state.maximized ? "Restore" : "Fill the Screen"), action: #selector(toggleMaximize),
+                    chord: state.maximizeChord, enabled: trusted)
+                menu.addItem(.separator())
+            }
+
+            menu.addItem(.sectionHeader(title: "Profiles"))
+            for p in state.profiles {
+                let title = p.fits ? plain(p.name) : withNote(p.name, "needs another screen")
+                let item = add(menu, title, action: #selector(applyProfile(_:)), chord: p.chord, enabled: trusted)
+                item.state = p.active ? .on : .off
+                item.representedObject = p.id
+            }
+            menu.addItem(.separator())
+            if state.overlayOn {
+                let hold = KeyNames.glyphs(engine.config.keys.switcher)
+                add(menu, withNote("Show Key Overlay", "or hold \(hold)"), action: #selector(showOverlay), enabled: trusted)
             }
         } else {
-            menu.addItem(withTitle: "No config loaded", action: nil, keyEquivalent: "").isEnabled = false
+            add(menu, bold("No config loaded"), enabled: false)
+            menu.addItem(.separator())
         }
-        if !AXIsProcessTrusted() {
-            menu.addItem(withTitle: "Accessibility permission is off", action: nil, keyEquivalent: "").isEnabled = false
-        }
-        menu.addItem(.separator())
-        let login = menu.addItem(withTitle: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
-        login.target = self
+
+        let login = add(menu, plain("Open at Login"), action: #selector(toggleOpenAtLogin))
         if !isInstalled {
-            login.title = "Open at Login (install to ~/Applications first)"
+            login.attributedTitle = withNote("Open at Login", "install to ~/Applications first")
             login.isEnabled = false
         } else {
             switch SMAppService.mainApp.status {
             case .enabled: login.state = .on
             case .requiresApproval:
-                login.title = "Open at Login (allow in System Settings)"
+                login.attributedTitle = withNote("Open at Login", "allow in System Settings")
                 login.state = .mixed
             default: login.state = .off
             }
         }
-        menu.addItem(withTitle: "Open Config", action: #selector(openConfig), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Reload Config", action: #selector(reload), keyEquivalent: "r").target = self
-        menu.addItem(withTitle: "Quit Tessera", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        add(menu, plain("Edit Config…"), action: #selector(openConfig), chord: .init(modifiers: [.cmd], key: ","))
+        add(menu, plain("Reload Config"), action: #selector(reload), chord: .init(modifiers: [.cmd], key: "r"))
+        menu.addItem(.separator())
+        if let engine, trusted {
+            let overlay = engine.menuState.overlayOn ? "key overlay on" : "key overlay off"
+            let status = add(menu, small("Ready: Accessibility on, \(overlay)"), enabled: false)
+            status.image = dot(.systemGreen)
+        }
+        let quit = add(menu, plain("Quit Tessera"), chord: .init(modifiers: [.cmd], key: "q"))
+        quit.action = #selector(NSApplication.terminate(_:))
+        quit.target = NSApp
+    }
+
+    private func addAccessibilityWarning(to menu: NSMenu) {
+        let title = add(menu, bold("Accessibility is off"), enabled: false)
+        title.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")?
+            .withSymbolConfiguration(.init(paletteColors: [.systemOrange]))
+        add(menu, small("Nothing moves until it's back. After turning it on, quit and reopen Tessera."), enabled: false)
+        add(menu, plain("Open System Settings…"), action: #selector(openAccessibilitySettings))
+        menu.addItem(.separator())
+    }
+
+    // MARK: Menu building
+
+    @discardableResult
+    private func add(_ menu: NSMenu, _ title: NSAttributedString, action: Selector? = nil,
+                     chord: Engine.MenuState.Chord? = nil, enabled: Bool = true) -> NSMenuItem {
+        let item = NSMenuItem(title: title.string, action: action, keyEquivalent: "")
+        item.attributedTitle = title
+        item.target = self
+        item.isEnabled = enabled
+        if let chord {
+            item.keyEquivalent = chord.key.lowercased()
+            var mask: NSEvent.ModifierFlags = []
+            if chord.modifiers.contains(.ctrl) { mask.insert(.control) }
+            if chord.modifiers.contains(.alt) { mask.insert(.option) }
+            if chord.modifiers.contains(.shift) { mask.insert(.shift) }
+            if chord.modifiers.contains(.cmd) { mask.insert(.command) }
+            item.keyEquivalentModifierMask = mask
+        }
+        menu.addItem(item)
+        return item
+    }
+
+    private func plain(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [.font: NSFont.menuFont(ofSize: 0)])
+    }
+
+    private func bold(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
+    }
+
+    private func small(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+    }
+
+    private func withNote(_ text: String, _ note: String) -> NSAttributedString {
+        let out = NSMutableAttributedString(attributedString: plain(text))
+        out.append(NSAttributedString(string: "  ·  \(note)", attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.secondaryLabelColor,
+        ]))
+        return out
+    }
+
+    private func dot(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+    }
+
+    @objc private func switchApp(_ sender: NSMenuItem) {
+        guard let i = sender.representedObject as? Int else { return }
+        engine?.switchTo(i)
+    }
+
+    @objc private func toggleMaximize() { engine?.toggleMaximize() }
+
+    @objc private func showOverlay() { engine?.previewOverlay() }
+
+    @objc private func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func applyProfile(_ sender: NSMenuItem) {

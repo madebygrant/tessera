@@ -144,3 +144,44 @@ struct SlotMoveTests {
         }
     }
 }
+
+@MainActor
+struct HotkeyListTests {
+    // The validator checks the config's list and the engine binds its own, so they must agree.
+    @Test func engineBindsExactlyTheConfiguredHotkeys() throws {
+        var s = Scene()
+        s.extra = #""slotMove": {},"#
+        let engine = try s.start()
+        let bound = engine.bindings.map { "\($0.modifiers.joined(separator: "+"))+\($0.key)" }
+        let listed = try s.config().hotkeys.map { "\($0.modifiers.joined(separator: "+"))+\($0.key)" }
+        #expect(bound == listed)
+    }
+}
+
+@MainActor
+struct MenuStateTests {
+    @Test func menuListsAppsAndProfilesWithTheirKeys() throws {
+        let s = Scene()
+        s.platform.addWindow("Zed")
+        s.platform.addWindow("Helium", title: "x - Development")
+        let state = try s.start().menuState
+        #expect(state.profileName == "Desk")
+        #expect(state.profileChord?.key == "j")
+        #expect(state.apps.map(\.name) == ["Dev", "Herdr"])
+        #expect(state.apps.map(\.showing) == [true, false])
+        #expect(state.apps.map(\.running) == [true, false])
+        #expect(state.apps[1].chord?.modifiers == [.ctrl, .alt])
+        #expect(state.apps[1].chord?.key == "2")
+        #expect(state.profiles.map(\.name) == ["Offgrid", "Desk", "Twin"])
+        #expect(state.profiles.map(\.active) == [false, true, false])
+        #expect(state.profiles.filter { !$0.fits }.isEmpty)
+    }
+
+    @Test func profilesNeedingAMissingScreenAreMarked() throws {
+        let s = Scene()
+        s.platform.screens = [ScreenInfo(name: "Built-in Retina Display", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+                                         usable: CGRect(x: 0, y: 30, width: 1440, height: 870))]
+        let state = try s.start().menuState
+        #expect(state.profiles.filter { !$0.fits }.map(\.name) == ["Desk", "Twin"])
+    }
+}

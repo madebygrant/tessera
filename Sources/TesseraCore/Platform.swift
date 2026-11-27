@@ -69,6 +69,8 @@ public protocol Platform: AnyObject {
     var isTrusted: Bool { get }
 
     func processes(named app: String) -> [AppProcess]
+    // The display name of whatever process owns `pid`.
+    func processName(pid: Int32) -> String?
     func windows(pid: Int32) -> [WindowInfo]
     func mainWindow(pid: Int32) -> WindowInfo?
     func focusedWindow(pid: Int32) -> WindowInfo?
@@ -99,7 +101,7 @@ public protocol Platform: AnyObject {
 
     func savedProfile(_ key: String) -> String?
     func saveProfile(_ name: String, _ key: String)
-    func showAlert(_ message: String)
+    func showAlert(_ notice: Notice)
 
     // `sketchybar --trigger event KEY=value...`, without waiting. A missing
     // sketchybar is a no-op, so this is safe on a machine without the bar.
@@ -108,8 +110,32 @@ public protocol Platform: AnyObject {
     func watchKeys(_ on: Bool)
     // Read live, for when a modifier release was missed.
     var heldModifiers: Set<Modifier> { get }
-    func showOverlay(_ boxes: [OverlayBox])
+    func showOverlay(_ elements: [OverlayElement])
     func hideOverlay()
+}
+
+// An error worth interrupting for: what went wrong, then what to do about it.
+public struct Notice: Sendable, Equatable {
+    public enum Action: Sendable, Equatable {
+        case openConfig, openAccessibilitySettings
+    }
+    public let title: String
+    public let detail: String
+    // Shown in monospace, for text the user has to find in a file.
+    public let code: String?
+    public let action: Action?
+
+    public init(_ title: String, _ detail: String = "", code: String? = nil, action: Action? = nil) {
+        self.title = title
+        self.detail = detail
+        self.code = code
+        self.action = action
+    }
+
+    static func noWindow(_ app: String) -> Notice {
+        Notice("No window from \(app) after \(Int(Engine.launchTimeout))s",
+               "It may still be starting. Press the key again once it's up.")
+    }
 }
 
 @MainActor

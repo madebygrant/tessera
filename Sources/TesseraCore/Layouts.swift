@@ -77,7 +77,7 @@ final class Layouts {
             self.settle(run)
             return true
         }, onTimeout: { [weak self] in
-            self?.engine.alert("no window from \(entry.app) after \(Int(Engine.launchTimeout))s")
+            self?.engine.alert(.noWindow(entry.app))
             self?.settle(run)
         }))
     }

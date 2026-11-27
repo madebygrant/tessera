@@ -51,7 +51,7 @@ Exit criterion: the bar updates on a switch and scrolling on it cycles apps.
 
 Exit criterion: Tessera is running after logging out and back in.
 
-## Wave 5: Small fixes
+## Wave 5: Small fixes [done 2026-11-27]
 
 - Reload the config when the file changes.
 - Check for hotkey collisions at load and name both sides of a clash.

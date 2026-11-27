@@ -30,8 +30,8 @@ public enum KeyNames {
         return set
     }
 
-    // Virtual key codes for the US ANSI layout. Carbon hotkeys bind physical
-    // keys, so on another layout a letter binds whatever sits in that position.
+    // US ANSI key codes: which names the config accepts, and the fallback the
+    // app uses for anything its layout lookup doesn't map (it maps letters).
     private static let codes: [String: UInt32] = [
         "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9,
         "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
@@ -50,12 +50,12 @@ public enum KeyNames {
     }
 
     // In the order macOS menus print them: ⌃⌥⇧⌘.
-    static func glyphs(_ names: [String]) -> String {
+    public static func glyphs(_ names: [String]) -> String {
         let set = (try? modifiers(names)) ?? []
         return Modifier.allCases.filter(set.contains).map(\.glyph).joined()
     }
 
-    static func label(_ key: String) -> String {
+    public static func label(_ key: String) -> String {
         let names = ["left": "←", "right": "→", "up": "↑", "down": "↓", "space": "Space"]
         return names[key.lowercased()] ?? key.uppercased()
     }

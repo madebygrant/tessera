@@ -103,7 +103,7 @@ final class Switcher {
             return true
         }, onTimeout: { [weak self] in
             self?.pending[key] = nil
-            self?.engine.alert("no window from \(entry.app) after \(Int(Engine.launchTimeout))s")
+            self?.engine.alert(.noWindow(entry.app))
         })
         return false
     }

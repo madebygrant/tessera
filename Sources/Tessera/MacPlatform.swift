@@ -83,6 +83,10 @@ final class MacPlatform: Platform {
 
     // MARK: Lookup
 
+    func processName(pid: Int32) -> String? {
+        NSRunningApplication(processIdentifier: pid)?.localizedName
+    }
+
     func processes(named app: String) -> [AppProcess] {
         NSWorkspace.shared.runningApplications
             .filter { !$0.isTerminated && ($0.localizedName == app || $0.bundleIdentifier == app) }
@@ -393,7 +397,7 @@ final class MacPlatform: Platform {
 
     func savedProfile(_ key: String) -> String? { UserDefaults.standard.string(forKey: key) }
     func saveProfile(_ name: String, _ key: String) { UserDefaults.standard.set(name, forKey: key) }
-    func showAlert(_ message: String) { HUD.show(message) }
+    func showAlert(_ notice: Notice) { Toasts.show(notice) }
 
     // Sketchybar's PATH isn't ours, so find the binary rather than run it by name.
     private var barBinaries: [String: String?] = [:]
@@ -426,6 +430,6 @@ final class MacPlatform: Platform {
 
     func watchKeys(_ on: Bool) { on ? keyTap.start() : keyTap.stop() }
     var heldModifiers: Set<Modifier> { KeyTap.held }
-    func showOverlay(_ boxes: [OverlayBox]) { OverlayWindows.show(boxes) }
+    func showOverlay(_ elements: [OverlayElement]) { OverlayWindows.show(elements) }
     func hideOverlay() { OverlayWindows.hide() }
 }

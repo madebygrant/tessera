@@ -4,24 +4,43 @@ public enum OverlayLayer: Sendable {
     case switcher, slotMove
 }
 
-public struct OverlayRun: Sendable, Equatable {
-    public enum Tone: Sendable { case normal, dim, accent }
-    public let text: String
-    public let size: Double
-    public let tone: Tone
-    public let bold: Bool
-}
-
-public struct OverlayBox: Sendable, Equatable {
-    public enum Placement: Sendable, Equatable {
-        case fill(CGRect)
-        // A pill sized to its text, along the bottom of this screen area.
-        case legend(CGRect)
+// What the overlay shows, in top-left screen coordinates. The app decides how
+// each piece looks; the core decides what's there.
+public enum OverlayElement: Sendable, Equatable {
+    public struct AppRow: Sendable, Equatable {
+        public enum State: Sendable, Equatable { case showing, ready, notRunning }
+        public let keys: [String]
+        public let name: String
+        public let state: State
+        public init(keys: [String], name: String, state: State) {
+            self.keys = keys
+            self.name = name
+            self.state = state
+        }
     }
-    public let placement: Placement
-    public let lines: [[OverlayRun]]
-    public let leftAligned: Bool
-    public let highlight: Bool
+
+    public struct ProfileChip: Sendable, Equatable {
+        // Just the key when the profile uses the shared layer, else its full chord.
+        public let key: String
+        public let name: String
+        public let active: Bool
+        public init(key: String, name: String, active: Bool) {
+            self.key = key
+            self.name = name
+            self.active = active
+        }
+    }
+
+    // Dims one whole screen.
+    case scrim(CGRect)
+    case anchor(CGRect, name: String)
+    case appList(CGRect, rows: [AppRow], cycleKeys: [String], maximizeKeys: [String], maximized: Bool)
+    // Along the bottom of this screen area.
+    case profiles(CGRect, chips: [ProfileChip], sharedModifiers: String)
+    case slot(CGRect, key: String, name: String)
+    case focused(CGRect, app: String)
+    // Along the bottom of this screen area: what the layer's keys do to `app`.
+    case slotHint(CGRect, modifiers: String, app: String?)
 }
 
 // heliumDev -> Helium Dev
@@ -45,6 +64,7 @@ final class Overlay {
     private(set) var held: OverlayLayer?
     private var showTimer: Cancellable?
     private var redrawTimer: Cancellable?
+    private var previewTimer: Cancellable?
     private(set) var visible = false
 
     init(engine: Engine, delay: Double) {
@@ -61,7 +81,7 @@ final class Overlay {
 
     func modifiersChanged(_ mods: Set<Modifier>) {
         let layer = layer(for: mods)
-        guard layer != held else { return }
+        guard layer != held || previewTimer != nil else { return }
         held = layer
         showTimer?.cancel()
         showTimer = nil
@@ -88,6 +108,20 @@ final class Overlay {
         }
     }
 
+    // From the menu, with no keys held: shows the switcher layer for a few
+    // seconds, or until a modifier changes.
+    func preview() {
+        let elements = switcherElements()
+        guard !elements.isEmpty else { return }
+        visible = true
+        engine.platform.showOverlay(elements)
+        previewTimer?.cancel()
+        previewTimer = engine.scheduler.after(4) { [weak self] in
+            self?.previewTimer = nil
+            self?.hide()
+        }
+    }
+
     private func layer(for mods: Set<Modifier>) -> OverlayLayer? {
         let config = engine.config
         if mods == (try? KeyNames.modifiers(config.keys.switcher)) { return .switcher }
@@ -101,6 +135,8 @@ final class Overlay {
     private func hide() {
         redrawTimer?.cancel()
         redrawTimer = nil
+        previewTimer?.cancel()
+        previewTimer = nil
         guard visible else { return }
         visible = false
         engine.platform.hideOverlay()
@@ -112,79 +148,65 @@ final class Overlay {
             held = nil
             return hide()
         }
-        let boxes = layer == .switcher ? switcherBoxes() : slotMoveBoxes()
-        guard !boxes.isEmpty else { return }
+        let elements = layer == .switcher ? switcherElements() : slotMoveElements()
+        guard !elements.isEmpty else { return }
         visible = true
-        engine.platform.showOverlay(boxes)
+        engine.platform.showOverlay(elements)
     }
 
-    // Sizes suit a laptop-height slot; a tall 4K slot gets up to 1.8x.
-    private func scale(_ frame: CGRect) -> Double { max(1, min(1.8, frame.height / 900)) }
+    private var scrims: [OverlayElement] { engine.platform.screens.map { .scrim($0.frame) } }
 
-    private func run(_ text: String, _ size: Double, _ tone: OverlayRun.Tone = .normal, bold: Bool = false) -> OverlayRun {
-        OverlayRun(text: text, size: size, tone: tone, bold: bold)
-    }
-
-    func switcherBoxes() -> [OverlayBox] {
+    func switcherElements() -> [OverlayElement] {
         let config = engine.config
         guard let profile = engine.profile, let block = engine.switcher.block else { return [] }
         let switcher = engine.switcher!
         let mods = KeyNames.glyphs(config.keys.switcher)
-        var boxes: [OverlayBox] = []
+        var out = scrims
 
         let anchorFrame = engine.frame(ofSlot: block.anchorSlot)
         let otherFrame = engine.frame(ofSlot: block.otherSlot)
-        // A full-screen profile shares one frame; the list box alone says it all.
+        // A full-screen profile shares one frame; the list alone says it all.
         if anchorFrame != otherFrame {
-            let k = scale(anchorFrame)
-            boxes.append(OverlayBox(placement: .fill(anchorFrame), lines: [
-                [run(prettyName(block.anchor), 30 * k, bold: true)],
-                [run("anchor", 15 * k, .dim)],
-            ], leftAligned: false, highlight: false))
+            out.append(.anchor(anchorFrame, name: prettyName(block.anchor)))
         }
-
         // No cycled apps: the switcher keys do nothing, so don't list them.
         if !block.apps.isEmpty {
-            let k = scale(otherFrame)
-            var lines = block.apps.enumerated().map { i, ref in
-                let on = i == switcher.index
-                return [run("\(mods)\(i + 1)    ", 22 * k, .dim), run(prettyName(ref), 22 * k, on ? .accent : .normal, bold: on)]
+            let rows = block.apps.enumerated().map { i, ref in
+                let running = config.apps[ref].map { !engine.platform.processes(named: $0.app).isEmpty } ?? false
+                let state: OverlayElement.AppRow.State = i == switcher.index ? .showing : (running ? .ready : .notRunning)
+                return OverlayElement.AppRow(keys: [mods, "\(i + 1)"], name: prettyName(ref), state: state)
             }
-            let maximize = KeyNames.label(config.keys.maximize)
-            lines.append([run("", 14 * k)])
-            lines.append([run("\(mods)← →  cycle      \(mods)\(maximize)  " + (switcher.maximized ? "restore" : "maximize"), 14 * k, .dim)])
-            boxes.append(OverlayBox(placement: .fill(otherFrame), lines: lines, leftAligned: true, highlight: true))
+            out.append(.appList(otherFrame, rows: rows, cycleKeys: [mods, "←", "→"],
+                                maximizeKeys: [mods, KeyNames.label(config.keys.maximize)], maximized: switcher.maximized))
         }
-
         if let screen = engine.usableScreen(ofSlot: block.anchorSlot) {
-            let k = scale(screen)
-            var legend: [OverlayRun] = []
+            let shared = KeyNames.glyphs(config.keys.profile ?? [])
             let byKey = config.profiles.sorted { ($0.value.key.lowercased(), $0.key) < ($1.value.key.lowercased(), $1.key) }
-            for (name, p) in byKey {
-                if !legend.isEmpty { legend.append(run("     ", 15 * k)) }
-                let on = name == profile
-                let chord = KeyNames.glyphs(p.modifier ?? config.keys.profile ?? []) + KeyNames.label(p.key)
-                legend.append(run("\(chord)  ", 15 * k, .dim))
-                legend.append(run(prettyName(name), 15 * k, on ? .accent : .normal, bold: on))
+            let chips = byKey.map { name, p in
+                let own = p.modifier.map(KeyNames.glyphs)
+                let key = (own != nil && own != shared ? own! : "") + KeyNames.label(p.key)
+                return OverlayElement.ProfileChip(key: key, name: prettyName(name), active: name == profile)
             }
-            boxes.append(OverlayBox(placement: .legend(screen), lines: [legend], leftAligned: false, highlight: false))
+            out.append(.profiles(screen, chips: chips, sharedModifiers: shared))
         }
-        return boxes
+        return out
     }
 
-    func slotMoveBoxes() -> [OverlayBox] {
+    func slotMoveElements() -> [OverlayElement] {
         let config = engine.config
-        guard let name = engine.profile, let order = config.profiles[name]?.slotOrder,
+        guard let name = engine.profile, let order = config.profiles[name]?.slotOrder, !order.isEmpty,
               let mods = config.keys.slotMove.map(KeyNames.glyphs)
         else { return [] }
-        return order.enumerated().map { i, slot in
-            let frame = engine.frame(ofSlot: slot)
-            let k = scale(frame)
-            return OverlayBox(placement: .fill(frame), lines: [
-                [run("\(mods)\(i + 1)", 34 * k, bold: true)],
-                [run(prettyName(slot), 16 * k, .dim)],
-                [run("send the focused window here", 13 * k, .dim)],
-            ], leftAligned: false, highlight: false)
+        var out = scrims
+        out += order.enumerated().map { i, slot in .slot(engine.frame(ofSlot: slot), key: "\(i + 1)", name: prettyName(slot)) }
+
+        let front = engine.platform.frontmostWindow()
+        let target = front.flatMap { $0.isStandard && !engine.platform.isFullScreen($0.ref) ? $0 : nil }
+        let appName = target.flatMap { w in engine.platform.processName(pid: w.ref.pid) }
+        if let target, let appName { out.append(.focused(target.frame, app: appName)) }
+        if let screen = engine.usableScreen(ofSlot: order[0]) {
+            out.append(.slotHint(screen, modifiers: mods, app: appName))
         }
+        return out
     }
 }

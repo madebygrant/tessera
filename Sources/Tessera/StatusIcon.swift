@@ -1,9 +1,11 @@
 import AppKit
 
-// The Triad mark for the menu bar. A template image, so macOS tints it for
-// light and dark bars and the highlighted state.
+// The Triad mark for the menu bar. Normally a template image, so macOS tints
+// it for light and dark bars. With `attention` it carries an amber dot, which
+// a template can't, so it draws in the bar's label colour itself.
 enum StatusIcon {
-    static func make() -> NSImage {
+    static func make(attention: Bool = false) -> NSImage {
+        let ink: NSColor = attention ? .labelColor : .black
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
             func polygon(_ points: [(CGFloat, CGFloat)]) -> NSBezierPath {
                 let path = NSBezierPath()
@@ -13,19 +15,23 @@ enum StatusIcon {
                 path.lineJoinStyle = .miter
                 return path
             }
-            NSColor.black.setFill()
+            ink.setFill()
             polygon([(3, 1.8), (9, 1.8), (9, 9.6), (7.8, 10.8), (1.8, 10.8), (1.8, 3)]).fill()
 
             let framed = polygon([(11.8, 2.5), (15.5, 2.5), (15.5, 9.1), (14.4, 10.1), (10.6, 10.1), (10.6, 3.6)])
             framed.lineWidth = 1.3
-            NSColor.black.setStroke()
+            ink.setStroke()
             framed.stroke()
 
-            NSColor.black.withAlphaComponent(0.55).setFill()
+            ink.withAlphaComponent(0.55).setFill()
             polygon([(3, 12.2), (16.2, 12.2), (16.2, 15), (15, 16.2), (1.8, 16.2), (1.8, 13.4)]).fill()
+            if attention {
+                NSColor.systemOrange.setFill()
+                NSBezierPath(ovalIn: NSRect(x: 12.2, y: 0.4, width: 5.4, height: 5.4)).fill()
+            }
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = !attention
         image.accessibilityDescription = "Tessera"
         return image
     }

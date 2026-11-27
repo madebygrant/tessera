@@ -3,6 +3,8 @@ import CoreGraphics
 public struct Binding {
     public let modifiers: [String]
     public let key: String
+    // What the key does, for messages that have to name it.
+    public let purpose: String
     public let action: @MainActor () -> Void
 }
 
@@ -24,7 +26,7 @@ public final class Engine {
     private var lastAlert: [String: Double] = [:]
     private var lastCycle = -Double.infinity
 
-    static let launchTimeout = 5.0
+    nonisolated static let launchTimeout = 5.0
     // An app's own resize this soon after a placement gets clamped (Ghostty
     // snapping to its cell grid); later ones are the user's.
     static let clampWindow = 1.0
@@ -73,30 +75,26 @@ public final class Engine {
         }
     }
 
+    // The config's hotkeys, in its order, each given its action. Number keys
+    // are bound for the widest list, so a profile switch never rebinds.
     public var bindings: [Binding] {
-        let mods = config.keys.switcher
-        // Bound for the widest list, so a profile switch never rebinds.
-        var out = (0..<config.maxSwitcherApps).map { i in
-            Binding(modifiers: mods, key: "\(i + 1)") { [weak self] in self?.switcher.press(i) }
+        var actions: [@MainActor () -> Void] = (0..<config.maxSwitcherApps).map { i in
+            { [weak self] in self?.switcher.press(i) }
         }
-        out.append(Binding(modifiers: mods, key: "left") { [weak self] in self?.switcher.step(-1) })
-        out.append(Binding(modifiers: mods, key: "right") { [weak self] in self?.switcher.step(1) })
-        out.append(Binding(modifiers: mods, key: config.keys.maximize) { [weak self] in self?.switcher.toggleMaximize() })
-        for (name, p) in config.profiles.sorted(by: { $0.key < $1.key }) {
-            out.append(Binding(modifiers: p.modifier ?? config.keys.profile ?? [], key: p.key) { [weak self] in
-                self?.layouts.apply(name)
-            })
+        actions.append { [weak self] in self?.switcher.step(-1) }
+        actions.append { [weak self] in self?.switcher.step(1) }
+        actions.append { [weak self] in self?.switcher.toggleMaximize() }
+        for name in config.profiles.keys.sorted() {
+            actions.append { [weak self] in self?.layouts.apply(name) }
         }
-        if config.isOn(config.slotMove), let mods = config.keys.slotMove {
-            out += (0..<config.maxSlotMoveKeys).map { i in
-                Binding(modifiers: mods, key: "\(i + 1)") { [weak self] in self?.moveFocused(toSlot: i) }
-            }
+        if config.isOn(config.slotMove), config.keys.slotMove != nil {
+            actions += (0..<config.maxSlotMoveKeys).map { i in { [weak self] in self?.moveFocused(toSlot: i) } }
         }
-        // Any hotkey is a chord, not a look, even when the tap can't see it.
-        return out.map { b in
-            Binding(modifiers: b.modifiers, key: b.key) { [weak self] in
+        return zip(config.hotkeys, actions).map { hotkey, action in
+            // Any hotkey is a chord, not a look, even when the tap can't see it.
+            Binding(modifiers: hotkey.modifiers, key: hotkey.key, purpose: hotkey.purpose) { [weak self] in
                 self?.overlay?.keyDown()
-                b.action()
+                action()
             }
         }
     }
@@ -113,6 +111,71 @@ public final class Engine {
     }
 
     public func apply(profile name: String) { layouts.apply(name) }
+
+    public func previewOverlay() { overlay?.preview() }
+    public func switchTo(_ index: Int) { switcher.press(index) }
+    public func toggleMaximize() { switcher.toggleMaximize() }
+
+    // What the menu bar menu shows. Chords are key equivalents: the modifiers
+    // and one key, which the menu draws the way macOS menus do.
+    public struct MenuState {
+        public struct Chord {
+            public let modifiers: Set<Modifier>
+            public let key: String
+            public init(modifiers: Set<Modifier>, key: String) {
+                self.modifiers = modifiers
+                self.key = key
+            }
+        }
+        public struct App {
+            public let name: String
+            public let chord: Chord?
+            public let showing: Bool
+            public let running: Bool
+        }
+        public struct ProfileItem {
+            public let id: String
+            public let name: String
+            public let chord: Chord?
+            public let active: Bool
+            // False when a screen it needs isn't connected.
+            public let fits: Bool
+        }
+        public let profileName: String?
+        public let profileChord: Chord?
+        public let screens: [String]
+        public let apps: [App]
+        public let maximizeChord: Chord?
+        public let maximized: Bool
+        public let profiles: [ProfileItem]
+        public let overlayOn: Bool
+    }
+
+    public var menuState: MenuState {
+        func chord(_ mods: [String]?, _ key: String) -> MenuState.Chord? {
+            guard let mods, let set = try? KeyNames.modifiers(mods) else { return nil }
+            return .init(modifiers: set, key: key)
+        }
+        let sw = config.keys.switcher
+        let apps = (switcher.block?.apps ?? []).enumerated().map { i, ref in
+            MenuState.App(
+                name: prettyName(ref), chord: chord(sw, "\(i + 1)"), showing: i == switcher.index,
+                running: config.apps[ref].map { !platform.processes(named: $0.app).isEmpty } ?? false
+            )
+        }
+        let profiles = config.profiles.sorted { ($0.value.key.lowercased(), $0.key) < ($1.value.key.lowercased(), $1.key) }
+            .map { id, p in
+                MenuState.ProfileItem(id: id, name: prettyName(id), chord: chord(p.modifier ?? config.keys.profile, p.key),
+                                      active: id == profile, fits: config.profileFits(id, connected: screenNames))
+            }
+        let active = profile.flatMap { config.profiles[$0] }
+        return MenuState(
+            profileName: profile.map(prettyName),
+            profileChord: active.flatMap { chord($0.modifier ?? config.keys.profile, $0.key) },
+            screens: screenNames, apps: apps, maximizeChord: chord(sw, config.keys.maximize),
+            maximized: switcher.maximized, profiles: profiles, overlayOn: overlay != nil
+        )
+    }
 
     // From the bar's scroll: a trackpad sends a burst, so one step per 0.4s.
     public func cycle(_ step: Int) {
@@ -221,22 +284,26 @@ public final class Engine {
 
     // MARK: Errors
 
-    func launchBlocker(_ app: String) -> String? {
+    func launchBlocker(_ app: String) -> Notice? {
         if !platform.isTrusted {
-            return "Tessera has no Accessibility permission. Enable it in System Settings"
+            return Notice("Tessera has no Accessibility permission",
+                          "Nothing moves until it's back. Turn it on, then quit and reopen Tessera.",
+                          action: .openAccessibilitySettings)
         }
         if platform.hasWindowOnOtherSpace(app) {
-            return "\(app) has a window on another Space; not opening another"
+            return Notice("\(app) has a window on another Space",
+                          "Tessera won't open a second one. Switch to that Space, or close the window there.")
         }
         return nil
     }
 
     // Errors only, each at most once per 5s: a profile apply can hit the same
     // blocker for every entry.
-    func alert(_ message: String) {
+    func alert(_ notice: Notice) {
+        let key = notice.title + "\n" + notice.detail
         let now = scheduler.now
-        if let last = lastAlert[message], now - last < 5 { return }
-        lastAlert[message] = now
-        platform.showAlert(message)
+        if let last = lastAlert[key], now - last < 5 { return }
+        lastAlert[key] = now
+        platform.showAlert(notice)
     }
 }
