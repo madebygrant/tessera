@@ -1,0 +1,147 @@
+// tessera config. Copy to ~/Library/Application Support/tessera/config.json.
+// JSON5: comments and trailing commas are fine.
+{
+  // Your name for a screen -> part of its real name. Unmatched names fall back
+  // to the primary screen. `Tessera --check` lists the connected ones.
+  "screens": {
+    "main": "Built-in Retina Display",
+    "external": "LF32TU87",
+  },
+
+  // Pixels to keep clear, for overlays macOS doesn't report (Sketchybar).
+  "screenInsets": {
+    "external": { "top": 28 },
+  },
+
+  // Pixels off every slot edge; neighbours end up 2*gap apart.
+  "gap": 0,
+
+  // Fractions (0..1) of a screen, top-left origin.
+  // Right halves are 0.499: Ghostty snaps a touch wider than its slot and the
+  // clamp then shoves it left, over the left half.
+  "slots": {
+    "topLeft":    { "screen": "external", "x": 0,   "y": 0,    "w": 0.5,   "h": 0.75 },
+    "topRight":   { "screen": "external", "x": 0.5, "y": 0,    "w": 0.499, "h": 0.75 },
+    "bottomWide": { "screen": "external", "x": 0,   "y": 0.75, "w": 1,     "h": 0.25 },
+    "leftHalf":   { "screen": "external", "x": 0,   "y": 0,    "w": 0.5,   "h": 1 },
+    "rightHalf":  { "screen": "external", "x": 0.5, "y": 0,    "w": 0.499, "h": 1 },
+    "mainMax":    { "screen": "main",     "x": 0,   "y": 0,    "w": 1,     "h": 1 },
+    "full":       { "screen": "external", "x": 0,   "y": 0,    "w": 1,     "h": 1 },
+  },
+
+  //   app          name as macOS shows it, or a bundle id
+  //   titleSuffix  pick one specific window by how its title ends
+  //   profileDir   Chromium/Helium: open this profile in its own window
+  //   launch       shell command to run instead (wins over profileDir)
+  "apps": {
+    "zed":        { "app": "Zed" },
+    "herdr":      { "app": "Herdr" },
+    "ghostty":    { "app": "Ghostty" },
+    "heliumDev":  { "app": "Helium", "titleSuffix": "Development", "profileDir": "Default" },
+    "heliumWork": { "app": "Helium", "titleSuffix": "Work", "profileDir": "Profile 1" },
+    "slack":      { "app": "Slack" },
+    "obsidian":   { "app": "Obsidian" },
+  },
+
+  // Steer clear of alt+cmd: its arrows switch tabs in most browsers and
+  // terminals, and a global hotkey takes them first.
+  // ctrl+alt is VoiceOver's modifier, so these go dead while VoiceOver is on.
+  "keys": {
+    "switcher": ["ctrl", "alt"],
+    "slotMove": ["ctrl", "alt", "shift"],
+    "profile":  ["ctrl", "alt", "cmd"],
+    "maximize": "f",
+  },
+
+  // Read by later versions; ignored for now.
+  "sketchybar": { "enabled": true, "event": "tessera_switcher" },
+  "overlay":    { "enabled": true, "delay": 1.0 },
+  "slotMove":   { "enabled": true },
+
+  // key       rides on keys.profile unless the profile names its own `modifier`
+  // switcher  anchor + anchorSlot pinned; `apps` cycle through otherSlot on
+  //           switcher+1..N; maximize puts the current one in fullSlot
+  // screens   screens this profile needs; picked at load and on dock/undock
+  // place     where each app goes on the profile's key. Earlier entries claim
+  //           their window first; useSwitcherWindow reuses the switcher's.
+  "profiles": {
+    "hardline": {
+      "key": "l",
+      "screens": ["external"],
+      "switcher": {
+        "anchor": "zed", "anchorSlot": "topLeft",
+        "otherSlot": "topRight", "fullSlot": "full",
+        "apps": ["heliumDev", "herdr"],
+      },
+      "slots": ["topLeft", "topRight", "bottomWide", "mainMax"],
+      "place": [
+        { "app": "heliumDev",  "slot": "topRight" },
+        { "app": "heliumWork", "slot": "mainMax" },
+        { "app": "herdr",      "slot": "topRight", "useSwitcherWindow": true },
+        { "app": "ghostty",    "slot": "bottomWide" },
+        { "app": "zed",        "slot": "topLeft" },
+        { "app": "slack",      "slot": "mainMax" },
+      ],
+    },
+
+    "cyberdeck": {
+      "key": "k",
+      "screens": ["external"],
+      "switcher": {
+        "anchor": "zed", "anchorSlot": "leftHalf",
+        "otherSlot": "rightHalf", "fullSlot": "full",
+        "apps": ["herdr", "heliumDev", "obsidian"],
+      },
+      "slots": ["leftHalf", "rightHalf", "mainMax"],
+      "place": [
+        { "app": "herdr",      "slot": "rightHalf" },
+        { "app": "heliumWork", "slot": "mainMax" },
+        { "app": "heliumDev",  "slot": "rightHalf", "useSwitcherWindow": true },
+        { "app": "obsidian",   "slot": "rightHalf", "useSwitcherWindow": true },
+        { "app": "zed",        "slot": "leftHalf" },
+        { "app": "slack",      "slot": "mainMax" },
+      ],
+    },
+
+    "netrunner": {
+      "key": "j",
+      "screens": ["external"],
+      "switcher": {
+        "anchor": "heliumDev", "anchorSlot": "leftHalf",
+        "otherSlot": "rightHalf", "fullSlot": "full",
+        "apps": ["herdr", "zed", "obsidian"],
+      },
+      "slots": ["leftHalf", "rightHalf", "mainMax"],
+      "place": [
+        { "app": "herdr",      "slot": "rightHalf" },
+        { "app": "heliumWork", "slot": "mainMax" },
+        { "app": "zed",        "slot": "rightHalf", "useSwitcherWindow": true },
+        { "app": "obsidian",   "slot": "rightHalf", "useSwitcherWindow": true },
+        { "app": "heliumDev",  "slot": "leftHalf" },
+        { "app": "slack",      "slot": "mainMax" },
+      ],
+    },
+
+    // Laptop alone. No `screens`, so it's the fallback without the monitor.
+    "offgrid": {
+      "key": "h",
+      "switcher": {
+        "anchor": "zed", "anchorSlot": "mainMax",
+        "otherSlot": "mainMax", "fullSlot": "mainMax",
+        "apps": ["zed", "herdr", "heliumDev", "obsidian"],
+      },
+      "slots": ["mainMax"],
+      "place": [
+        { "app": "zed",        "slot": "mainMax" },
+        { "app": "herdr",      "slot": "mainMax", "useSwitcherWindow": true },
+        { "app": "heliumDev",  "slot": "mainMax" },
+        { "app": "obsidian",   "slot": "mainMax", "useSwitcherWindow": true },
+        { "app": "heliumWork", "slot": "mainMax" },
+        { "app": "slack",      "slot": "mainMax" },
+      ],
+    },
+  },
+
+  // The profile on first run; after that, the last one used with these screens.
+  "defaultProfile": "netrunner",
+}
